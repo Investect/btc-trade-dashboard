@@ -1,0 +1,588 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>BTC Scalp Journal</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Inter:wght@400;500;600&display=swap');
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg:        #0b0e14;
+    --surface:   #111520;
+    --border:    #1e2535;
+    --border2:   #252d40;
+    --text:      #cdd6f4;
+    --muted:     #585f7a;
+    --long:      #4ade80;
+    --long-dim:  rgba(74,222,128,0.08);
+    --short:     #f87171;
+    --short-dim: rgba(248,113,113,0.08);
+    --win:       #4ade80;
+    --loss:      #f87171;
+    --neutral:   #7c8db0;
+    --accent:    #7aa2f7;
+    --open-glow: rgba(122,162,247,0.15);
+    --mono:      'JetBrains Mono', monospace;
+    --sans:      'Inter', sans-serif;
+  }
+
+  html, body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--sans);
+    font-size: 12px;
+    height: 100%;
+    overflow: hidden;
+  }
+
+  /* ── LAYOUT ── */
+  .app {
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+    padding: 8px;
+    gap: 6px;
+  }
+
+  /* ── HEADER ── */
+  .header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 6px 10px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    flex-shrink: 0;
+  }
+
+  .header-left {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .logo {
+    font-family: var(--mono);
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--accent);
+    letter-spacing: 0.08em;
+  }
+
+  .symbol-badge {
+    font-family: var(--mono);
+    font-size: 10px;
+    color: var(--muted);
+    background: var(--border);
+    padding: 2px 6px;
+    border-radius: 3px;
+  }
+
+  .pulse-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--win);
+    animation: pulse 2s infinite;
+    flex-shrink: 0;
+  }
+
+  .pulse-dot.error { background: var(--loss); animation: none; }
+
+  @keyframes pulse {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50%       { opacity: 0.4; transform: scale(0.85); }
+  }
+
+  .last-update {
+    font-family: var(--mono);
+    font-size: 9px;
+    color: var(--muted);
+  }
+
+  /* ── OPEN TRADE BANNER ── */
+  .open-trade {
+    display: none;
+    padding: 7px 12px;
+    background: var(--open-glow);
+    border: 1px solid var(--accent);
+    border-radius: 6px;
+    flex-shrink: 0;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .open-trade.visible { display: flex; }
+
+  .open-label {
+    font-family: var(--mono);
+    font-size: 9px;
+    font-weight: 700;
+    color: var(--accent);
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+  }
+
+  .open-dir {
+    font-family: var(--mono);
+    font-size: 11px;
+    font-weight: 700;
+  }
+
+  .open-dir.long  { color: var(--long); }
+  .open-dir.short { color: var(--short); }
+
+  .open-entry {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--text);
+  }
+
+  .open-live-pnl {
+    font-family: var(--mono);
+    font-size: 12px;
+    font-weight: 700;
+    margin-left: auto;
+  }
+
+  .open-size {
+    font-family: var(--mono);
+    font-size: 10px;
+    color: var(--muted);
+  }
+
+  /* ── STATS ROW ── */
+  .stats-row {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 5px;
+    flex-shrink: 0;
+  }
+
+  .stat-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 5px;
+    padding: 6px 8px;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .stat-label {
+    font-size: 9px;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    font-weight: 500;
+  }
+
+  .stat-value {
+    font-family: var(--mono);
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--text);
+  }
+
+  .stat-value.win  { color: var(--win); }
+  .stat-value.loss { color: var(--loss); }
+
+  /* ── TABLE ── */
+  .table-wrap {
+    flex: 1;
+    overflow: hidden;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    display: flex;
+    flex-direction: column;
+  }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+  }
+
+  thead th {
+    font-family: var(--mono);
+    font-size: 9px;
+    font-weight: 600;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    padding: 7px 8px;
+    text-align: right;
+    border-bottom: 1px solid var(--border);
+    background: var(--bg);
+    white-space: nowrap;
+  }
+
+  thead th:first-child,
+  thead th:nth-child(2),
+  thead th:nth-child(3) { text-align: left; }
+
+  tbody tr {
+    border-bottom: 1px solid var(--border);
+    transition: background 0.15s;
+  }
+
+  tbody tr:last-child { border-bottom: none; }
+
+  tbody tr:hover { background: rgba(255,255,255,0.02); }
+
+  tbody tr.row-long  { border-left: 2px solid var(--long); }
+  tbody tr.row-short { border-left: 2px solid var(--short); }
+  tbody tr.row-empty { border-left: 2px solid transparent; }
+
+  td {
+    font-family: var(--mono);
+    font-size: 11px;
+    padding: 6px 8px;
+    color: var(--neutral);
+    text-align: right;
+    white-space: nowrap;
+  }
+
+  td:first-child { text-align: left; width: 22px; }
+  td:nth-child(2) { text-align: left; }
+  td:nth-child(3) { text-align: left; }
+
+  .dir-long  { color: var(--long);  font-weight: 600; }
+  .dir-short { color: var(--short); font-weight: 600; }
+
+  .pnl-win  { color: var(--win);  font-weight: 700; }
+  .pnl-loss { color: var(--loss); font-weight: 700; }
+
+  .pts-win  { color: var(--win); }
+  .pts-loss { color: var(--loss); }
+
+  .row-num { color: var(--border2); font-size: 9px; }
+
+  .time-cell { color: var(--muted); font-size: 10px; }
+
+  /* flash animation on new trade */
+  @keyframes flash-in {
+    0%   { background: rgba(122,162,247,0.15); }
+    100% { background: transparent; }
+  }
+
+  tr.new-trade { animation: flash-in 1.2s ease-out; }
+
+  /* ── EMPTY STATE ── */
+  .empty-state {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    color: var(--muted);
+  }
+
+  .empty-state .icon { font-size: 24px; opacity: 0.3; }
+  .empty-state p { font-size: 11px; }
+
+  /* ── WEBHOOK INFO ── */
+  .webhook-info {
+    padding: 5px 10px;
+    background: var(--bg);
+    border-top: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-shrink: 0;
+  }
+
+  .webhook-label {
+    font-size: 9px;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+  }
+
+  .webhook-url {
+    font-family: var(--mono);
+    font-size: 9px;
+    color: var(--accent);
+    word-break: break-all;
+  }
+
+  .clear-btn {
+    margin-left: auto;
+    font-family: var(--mono);
+    font-size: 9px;
+    color: var(--muted);
+    background: none;
+    border: 1px solid var(--border2);
+    border-radius: 3px;
+    padding: 2px 7px;
+    cursor: pointer;
+    transition: all 0.15s;
+    flex-shrink: 0;
+  }
+
+  .clear-btn:hover { color: var(--loss); border-color: var(--loss); }
+
+  /* ── SCROLLBAR ── */
+  ::-webkit-scrollbar { width: 4px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 2px; }
+</style>
+</head>
+<body>
+<div class="app">
+
+  <!-- Header -->
+  <div class="header">
+    <div class="header-left">
+      <span class="pulse-dot" id="statusDot"></span>
+      <span class="logo">SCALP JOURNAL</span>
+      <span class="symbol-badge">BTC/USD · CFD</span>
+    </div>
+    <span class="last-update" id="lastUpdate">connecting…</span>
+  </div>
+
+  <!-- Open trade banner -->
+  <div class="open-trade" id="openTrade">
+    <span class="open-label">Live</span>
+    <span class="open-dir" id="openDir">—</span>
+    <span class="open-entry" id="openEntry">—</span>
+    <span class="open-size" id="openSize">—</span>
+    <span class="open-live-pnl" id="openPnl">—</span>
+  </div>
+
+  <!-- Stats -->
+  <div class="stats-row">
+    <div class="stat-card">
+      <span class="stat-label">Net P&L</span>
+      <span class="stat-value" id="statNet">—</span>
+    </div>
+    <div class="stat-card">
+      <span class="stat-label">Win Rate</span>
+      <span class="stat-value" id="statWr">—</span>
+    </div>
+    <div class="stat-card">
+      <span class="stat-label">W / L</span>
+      <span class="stat-value" id="statWl">—</span>
+    </div>
+    <div class="stat-card">
+      <span class="stat-label">Best</span>
+      <span class="stat-value win" id="statBest">—</span>
+    </div>
+    <div class="stat-card">
+      <span class="stat-label">Worst</span>
+      <span class="stat-value loss" id="statWorst">—</span>
+    </div>
+  </div>
+
+  <!-- Table -->
+  <div class="table-wrap" id="tableWrap">
+    <table id="tradeTable">
+      <thead>
+        <tr>
+          <th>#</th>
+          <th>Dir</th>
+          <th>Time</th>
+          <th>Entry</th>
+          <th>Exit</th>
+          <th>Points</th>
+          <th>Size</th>
+          <th>$/pt</th>
+          <th>P&L</th>
+        </tr>
+      </thead>
+      <tbody id="tradeBody"></tbody>
+    </table>
+    <div class="empty-state" id="emptyState">
+      <span class="icon">⬡</span>
+      <p>Waiting for first execution…</p>
+      <p>Fire a buy/sell alert to populate the table</p>
+    </div>
+  </div>
+
+  <!-- Webhook URL bar -->
+  <div class="webhook-info">
+    <span class="webhook-label">Webhook</span>
+    <span class="webhook-url" id="webhookUrl">loading…</span>
+    <button class="clear-btn" onclick="clearTrades()">Clear</button>
+  </div>
+
+</div>
+
+<script>
+  const POLL_MS   = 2000;
+  let lastTradeIds = new Set();
+  let openTrade    = null;
+  let btcPrice     = null;
+
+  // Show the webhook URL dynamically
+  document.getElementById('webhookUrl').textContent =
+    window.location.origin + '/webhook';
+
+  // ── FORMAT HELPERS ─────────────────────────────────────────────────────────
+  const fmt = {
+    price: v => v == null ? '—' : Number(v).toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2}),
+    pts:   v => v == null ? '—' : (v >= 0 ? '+' : '') + Number(v).toFixed(2),
+    pnl:   v => v == null ? '—' : (v >= 0 ? '+$' : '-$') + Math.abs(v).toFixed(2),
+    time:  v => {
+      if (!v) return '—';
+      const d = new Date(v);
+      return d.toLocaleTimeString('en-GB', {hour:'2-digit', minute:'2-digit', second:'2-digit'});
+    },
+    size:  v => v == null ? '—' : Number(v).toString(),
+    ppp:   v => v == null ? '—' : '$' + Number(v).toFixed(2)
+  };
+
+  // ── FETCH BTC PRICE (for open trade live P&L) ──────────────────────────────
+  async function fetchBtcPrice() {
+    try {
+      const r = await fetch('https://api.binance.com/api/v3/ticker/price?symbol=BTCUSDT');
+      const d = await r.json();
+      btcPrice = parseFloat(d.price);
+    } catch { /* silent */ }
+  }
+
+  // ── RENDER ─────────────────────────────────────────────────────────────────
+  function renderTrades(data) {
+    const { closed, open, stats } = data;
+
+    // Status dot
+    document.getElementById('statusDot').className = 'pulse-dot';
+    document.getElementById('lastUpdate').textContent =
+      'updated ' + new Date().toLocaleTimeString('en-GB');
+
+    // Open trade banner
+    const banner = document.getElementById('openTrade');
+    if (open) {
+      openTrade = open;
+      banner.classList.add('visible');
+      const dirEl = document.getElementById('openDir');
+      dirEl.textContent = open.direction;
+      dirEl.className = 'open-dir ' + (open.direction === 'Long' ? 'long' : 'short');
+      document.getElementById('openEntry').textContent = '@ ' + fmt.price(open.entry_price);
+      document.getElementById('openSize').textContent  = open.size + ' lots';
+      updateLivePnl();
+    } else {
+      openTrade = null;
+      banner.classList.remove('visible');
+    }
+
+    // Stats
+    if (stats && stats.total > 0) {
+      const wr = stats.wins / (stats.wins + stats.losses);
+      const netEl = document.getElementById('statNet');
+      netEl.textContent = fmt.pnl(stats.net_pnl);
+      netEl.className   = 'stat-value ' + (stats.net_pnl >= 0 ? 'win' : 'loss');
+
+      document.getElementById('statWr').textContent =
+        Math.round(wr * 100) + '%';
+      document.getElementById('statWl').textContent =
+        stats.wins + 'W / ' + stats.losses + 'L';
+      document.getElementById('statBest').textContent  = fmt.pnl(stats.best);
+      document.getElementById('statWorst').textContent = fmt.pnl(stats.worst);
+    } else {
+      ['statNet','statWr','statWl','statBest','statWorst']
+        .forEach(id => { document.getElementById(id).textContent = '—'; });
+    }
+
+    // Table body
+    const tbody  = document.getElementById('tradeBody');
+    const empty  = document.getElementById('emptyState');
+    const table  = document.getElementById('tradeTable');
+
+    if (!closed.length) {
+      table.style.display = 'none';
+      empty.style.display = 'flex';
+      return;
+    }
+
+    table.style.display = '';
+    empty.style.display = 'none';
+
+    // Fill up to 8 rows
+    const rows   = [...closed];
+    while (rows.length < 8) rows.push(null);
+
+    const newIds = new Set(closed.map(t => t.id));
+    tbody.innerHTML = '';
+
+    rows.forEach((trade, i) => {
+      const tr = document.createElement('tr');
+
+      if (!trade) {
+        tr.className = 'row-empty';
+        tr.innerHTML = `
+          <td class="row-num">${i+1}</td>
+          <td>—</td><td class="time-cell">—</td>
+          <td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td>`;
+      } else {
+        const isNew = !lastTradeIds.has(trade.id);
+        tr.className = 'row-' + trade.direction.toLowerCase() + (isNew ? ' new-trade' : '');
+
+        const ptsClass = trade.points >= 0 ? 'pts-win' : 'pts-loss';
+        const pnlClass = trade.pnl    >= 0 ? 'pnl-win' : 'pnl-loss';
+        const dirClass = trade.direction === 'Long' ? 'dir-long' : 'dir-short';
+
+        tr.innerHTML = `
+          <td class="row-num">${i+1}</td>
+          <td class="${dirClass}">${trade.direction}</td>
+          <td class="time-cell">${fmt.time(trade.entry_time)}</td>
+          <td>${fmt.price(trade.entry_price)}</td>
+          <td>${fmt.price(trade.exit_price)}</td>
+          <td class="${ptsClass}">${fmt.pts(trade.points)}</td>
+          <td>${fmt.size(trade.size)}</td>
+          <td>${fmt.ppp(trade.ppp)}</td>
+          <td class="${pnlClass}">${fmt.pnl(trade.pnl)}</td>`;
+      }
+
+      tbody.appendChild(tr);
+    });
+
+    lastTradeIds = newIds;
+  }
+
+  // ── LIVE P&L FOR OPEN TRADE ────────────────────────────────────────────────
+  function updateLivePnl() {
+    if (!openTrade || !btcPrice) return;
+    const pts = openTrade.direction === 'Long'
+      ? btcPrice - openTrade.entry_price
+      : openTrade.entry_price - btcPrice;
+    const pnl = pts * openTrade.ppp * openTrade.size;
+
+    const el = document.getElementById('openPnl');
+    el.textContent  = fmt.pnl(pnl) + ' live';
+    el.style.color  = pnl >= 0 ? 'var(--win)' : 'var(--loss)';
+  }
+
+  // ── POLL ───────────────────────────────────────────────────────────────────
+  async function poll() {
+    try {
+      const r = await fetch('/api/trades');
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      const data = await r.json();
+      renderTrades(data);
+    } catch (e) {
+      document.getElementById('statusDot').className = 'pulse-dot error';
+      document.getElementById('lastUpdate').textContent = 'connection error';
+    }
+  }
+
+  async function clearTrades() {
+    if (!confirm('Clear all trade history?')) return;
+    await fetch('/api/trades', { method: 'DELETE' });
+    poll();
+  }
+
+  // ── INIT ───────────────────────────────────────────────────────────────────
+  poll();
+  setInterval(poll, POLL_MS);
+  fetchBtcPrice();
+  setInterval(fetchBtcPrice, 5000);
+  setInterval(updateLivePnl, 1000);
+</script>
+</body>
+</html>
