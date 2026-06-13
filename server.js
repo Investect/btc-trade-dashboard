@@ -186,3 +186,25 @@ app.listen(PORT, () => {
   console.log(`BTC Trade Dashboard → http://localhost:${PORT}`);
   console.log(`Webhook endpoint    → POST /webhook`);
 });
+
+// ─── EDIT TRADE (fix size / direction) ───────────────────────────────────────
+app.patch('/api/trade/:id', (req, res) => {
+  const id  = parseInt(req.params.id);
+  const { size, direction } = req.body;
+  const db  = readDb();
+  const idx = db.trades.findIndex(t => t.id === id);
+  if (idx === -1) return res.status(404).json({ error: 'Trade not found' });
+
+  const trade  = db.trades[idx];
+  const newSize = size      ? +size      : trade.size;
+  const newDir  = direction || trade.direction;
+
+  const pts = newDir === 'Long'
+    ? trade.exit_price - trade.entry_price
+    : trade.entry_price - trade.exit_price;
+  const pnl = pts * trade.ppp * newSize;
+
+  db.trades[idx] = { ...trade, size: newSize, direction: newDir, points: pts, pnl };
+  writeDb(db);
+  res.json({ ok: true });
+});
