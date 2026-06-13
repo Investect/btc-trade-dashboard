@@ -195,6 +195,8 @@
   .dtc-analysis-label{font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px;display:flex;align-items:center;justify-content:space-between}
   .dtc-analysis-refresh{font-size:9px;color:var(--muted);background:none;border:1px solid var(--border2);border-radius:3px;padding:1px 6px;cursor:pointer}
   .dtc-analysis-refresh:hover{color:var(--accent);border-color:var(--accent)}
+  tbody tr.row-expanded { background:rgba(122,162,247,0.04); }
+  tbody tr:hover { background:rgba(255,255,255,.02); cursor:pointer; }
   ::-webkit-scrollbar{width:4px;height:4px}
   ::-webkit-scrollbar-thumb{background:var(--border2);border-radius:2px}
 </style>
@@ -343,7 +345,8 @@ let editSize     = null;
 let activeTab    = 'live';
 let activeFilter = 'all';
 let diaryYear, diaryMonth, diaryDay;
-let noteTradeId  = null;
+let noteTradeId     = null;
+let expandedTradeId = null;
 let dayNoteTimer = null;
 
 const now0 = new Date();
@@ -399,6 +402,21 @@ document.addEventListener('keydown', e => {
 
 // ── NOTE POPUP (live table) ───────────────────────────────────────────────────
 let noteAnchor = null;
+function toggleTradeExpand(id) {
+  expandedTradeId = expandedTradeId === id ? null : id;
+  const last8  = [...allTrades].sort((a,b)=>b.exit_time-a.exit_time).slice(0,8);
+  const wins   = last8.filter(t=>t.pnl>0).length;
+  const losses = last8.filter(t=>t.pnl<0).length;
+  const net    = last8.reduce((s,t)=>s+(t.pnl||0),0);
+  const pnls   = last8.map(t=>t.pnl).filter(v=>v!=null);
+  renderLive(allTrades, {
+    total: last8.length, wins, losses, net_pnl: net,
+    best: pnls.length?Math.max(...pnls):0,
+    worst: pnls.length?Math.min(...pnls):0
+  });
+  if (expandedTradeId) setTimeout(() => refreshAnalysis(expandedTradeId), 150);
+}
+
 function openNotePopup(tradeId, anchorEl, currentNote) {
   noteTradeId = tradeId;
   const popup = document.getElementById('notePopup');
@@ -487,12 +505,15 @@ function renderLive(trades, stats) {
       tr.className='row-empty';
       tr.innerHTML=`<td>${i+1}</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td></td>`;
     } else {
-      const isNew=trade.id===(brandNew&&brandNew.id);
-      tr.className='row-'+trade.direction.toLowerCase()+(isNew?' new-flash':'');
+      const isNew      = trade.id===(brandNew&&brandNew.id);
+      const isExpanded = expandedTradeId === trade.id;
+      tr.className = 'row-'+trade.direction.toLowerCase()+(isNew?' new-flash':'')+(isExpanded?' row-expanded':'');
+      tr.style.cursor = 'pointer';
+      tr.title = 'Click to expand analysis';
+      tr.onclick = () => toggleTradeExpand(trade.id);
       const pc=trade.points>=0?'pts-win':'pts-loss';
       const nc=trade.pnl>=0?'pnl-win':'pnl-loss';
       const dc=trade.direction==='Long'?'dir-long':'dir-short';
-      const hasNote = trade.note && trade.note.trim();
       tr.innerHTML=`
         <td>${i+1}</td>
         <td class="${dc}">${trade.direction}</td>
@@ -502,7 +523,37 @@ function renderLive(trades, stats) {
         <td class="${pc}">${fmt.pts(trade.points)}</td>
         <td>${trade.size}</td>
         <td class="${nc}">${fmt.pnl(trade.pnl)}</td>
-        <td class="note-cell"><button class="note-btn${hasNote?' has-note':''}" title="${hasNote?trade.note:'Add note'}" onclick="openNotePopup(${trade.id},this,${JSON.stringify(trade.note||'')})">📝</button></td>`;
+        <td style="text-align:center;color:var(--muted);font-size:9px">${isExpanded?'▲':'▼'}</td>`;
+      tbody.appendChild(tr);
+
+      // Expanded detail panel
+      if (isExpanded) {
+        const detailRow = document.createElement('tr');
+        detailRow.className = 'row-'+trade.direction.toLowerCase();
+        const detailTd = document.createElement('td');
+        detailTd.colSpan = 9;
+        detailTd.style.padding = '0';
+        const analysis = trade.auto_analysis || 'Click ↻ Refresh to generate analysis';
+        const noteVal  = trade.note || '';
+        detailTd.innerHTML = `
+          <div style="padding:12px 14px;background:rgba(17,21,32,0.95);border-top:1px solid var(--border2);display:flex;gap:14px;flex-wrap:wrap">
+            <div style="flex:1;min-width:220px">
+              <div class="dtc-analysis-label">🤖 Auto Analysis <button class="dtc-analysis-refresh" onclick="event.stopPropagation();refreshAnalysis(${trade.id})">↻ Refresh</button></div>
+              <div id="analysis_${trade.id}" class="dtc-analysis">${analysis}</div>
+            </div>
+            <div style="flex:1;min-width:180px">
+              <div class="dtc-analysis-label">📝 Note</div>
+              <div style="display:flex;gap:6px;align-items:flex-start">
+                <textarea class="dtc-note-input" id="tnote_${trade.id}" placeholder="Why did you take this trade? What happened?" onkeydown="handleTradeNoteKey(event,${trade.id})" onclick="event.stopPropagation()" style="min-height:60px;flex:1">${noteVal}</textarea>
+                <button class="dtc-note-save" onclick="event.stopPropagation();saveTradeNote(${trade.id})">Save</button>
+              </div>
+            </div>
+          </div>`;
+        detailRow.appendChild(detailTd);
+        tbody.appendChild(detailRow);
+        return;
+      }
+      return;
     }
     tbody.appendChild(tr);
   });
