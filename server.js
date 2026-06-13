@@ -152,7 +152,7 @@ app.get('/api/trades', (req, res) => {
 });
 
 // ─── MANUAL TRADE ────────────────────────────────────────────────────────────
-app.post('/api/trade', (req, res) => {
+app.post("/api/trade", (req, res) => {
   const { direction, entry_price, exit_price, size = 1, ppp = 1 } = req.body;
   if (!direction || !entry_price || !exit_price) {
     return res.status(400).json({ error: 'direction, entry_price, exit_price required' });
