@@ -6,304 +6,156 @@
 <title>BTC Scalp Journal</title>
 <style>
   @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Inter:wght@400;500;600&display=swap');
-
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-
   :root {
-    --bg:      #0b0e14;
-    --surface: #111520;
-    --border:  #1e2535;
-    --border2: #252d40;
-    --text:    #cdd6f4;
-    --muted:   #585f7a;
-    --win:     #4ade80;
-    --loss:    #f87171;
-    --neutral: #7c8db0;
-    --accent:  #7aa2f7;
-    --long:    #4ade80;
-    --short:   #f87171;
-    --mono:    'JetBrains Mono', monospace;
-    --sans:    'Inter', sans-serif;
+    --bg:#0b0e14; --surface:#111520; --border:#1e2535; --border2:#252d40;
+    --text:#cdd6f4; --muted:#585f7a; --win:#4ade80; --loss:#f87171;
+    --neutral:#7c8db0; --accent:#7aa2f7; --long:#4ade80; --short:#f87171;
+    --mono:'JetBrains Mono',monospace; --sans:'Inter',sans-serif;
   }
+  html,body { background:var(--bg); color:var(--text); font-family:var(--sans); font-size:12px; height:100%; overflow:hidden; }
+  .app { display:flex; flex-direction:column; height:100vh; padding:8px; gap:6px; }
 
-  html, body {
-    background: var(--bg);
-    color: var(--text);
-    font-family: var(--sans);
-    font-size: 12px;
-    height: 100%;
-    overflow: hidden;
-  }
+  /* HEADER */
+  .header { display:flex; align-items:center; justify-content:space-between; padding:6px 10px; background:var(--surface); border:1px solid var(--border); border-radius:6px; flex-shrink:0; }
+  .logo { font-family:var(--mono); font-size:11px; font-weight:700; color:var(--accent); letter-spacing:0.08em; }
+  .badge { font-family:var(--mono); font-size:10px; color:var(--muted); background:var(--border); padding:2px 6px; border-radius:3px; margin-left:8px; }
+  .last-update { font-family:var(--mono); font-size:9px; color:var(--muted); }
+  .pulse { width:6px; height:6px; border-radius:50%; background:var(--win); animation:pulse 2s infinite; margin-right:8px; flex-shrink:0; }
+  @keyframes pulse { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:.4;transform:scale(.85)} }
 
-  .app {
-    display: flex;
-    flex-direction: column;
-    height: 100vh;
-    padding: 8px;
-    gap: 6px;
-  }
+  /* STATS */
+  .stats-row { display:grid; grid-template-columns:repeat(5,1fr); gap:5px; flex-shrink:0; }
+  .stat-card { background:var(--surface); border:1px solid var(--border); border-radius:5px; padding:6px 8px; }
+  .stat-label { font-size:9px; color:var(--muted); text-transform:uppercase; letter-spacing:.06em; }
+  .stat-value { font-family:var(--mono); font-size:13px; font-weight:700; color:var(--text); }
+  .stat-value.win{color:var(--win)} .stat-value.loss{color:var(--loss)}
 
-  /* ── HEADER ── */
-  .header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 6px 10px;
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: 6px;
-    flex-shrink: 0;
-  }
-
-  .logo { font-family: var(--mono); font-size: 11px; font-weight: 700; color: var(--accent); letter-spacing: 0.08em; }
-  .symbol-badge { font-family: var(--mono); font-size: 10px; color: var(--muted); background: var(--border); padding: 2px 6px; border-radius: 3px; margin-left: 8px; }
-  .last-update { font-family: var(--mono); font-size: 9px; color: var(--muted); }
-
-  /* ── QUICK ENTRY FORM ── */
-  .entry-form {
+  /* QUICK EDIT BANNER — appears automatically on new trade */
+  .quick-edit {
     background: var(--surface);
     border: 1px solid var(--accent);
     border-radius: 6px;
-    padding: 8px 10px;
+    padding: 10px 12px;
     flex-shrink: 0;
+    display: none;
+    flex-direction: column;
+    gap: 8px;
+    position: relative;
   }
+  .quick-edit.visible { display: flex; }
 
-  .form-row {
+  .qe-top {
     display: flex;
-    gap: 6px;
     align-items: center;
+    gap: 8px;
   }
 
-  .dir-btns {
-    display: flex;
-    gap: 4px;
+  .qe-new-badge {
+    font-family: var(--mono);
+    font-size: 9px;
+    font-weight: 700;
+    color: #0b0e14;
+    background: var(--accent);
+    padding: 2px 7px;
+    border-radius: 3px;
+    letter-spacing: .06em;
     flex-shrink: 0;
   }
 
-  .dir-btn {
+  .qe-trade-info {
     font-family: var(--mono);
     font-size: 11px;
-    font-weight: 700;
-    padding: 6px 12px;
-    border: 1px solid var(--border2);
-    border-radius: 4px;
-    cursor: pointer;
-    background: var(--bg);
     color: var(--muted);
-    transition: all 0.1s;
-  }
-
-  .dir-btn.long.active  { background: rgba(74,222,128,0.15); border-color: var(--long);  color: var(--long); }
-  .dir-btn.short.active { background: rgba(248,113,113,0.15); border-color: var(--short); color: var(--short); }
-  .dir-btn:hover { opacity: 0.8; }
-
-  .form-field {
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
     flex: 1;
   }
 
-  .form-field label {
-    font-size: 8px;
+  .qe-dismiss {
+    font-size: 10px;
     color: var(--muted);
-    text-transform: uppercase;
-    letter-spacing: 0.06em;
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: 2px 6px;
+    border-radius: 3px;
+    flex-shrink: 0;
   }
+  .qe-dismiss:hover { color: var(--text); }
 
-  .form-field input {
-    font-family: var(--mono);
-    font-size: 12px;
-    background: var(--bg);
-    border: 1px solid var(--border2);
-    border-radius: 4px;
-    color: var(--text);
-    padding: 5px 7px;
-    width: 100%;
-    outline: none;
-    transition: border-color 0.1s;
-  }
-
-  .form-field input:focus { border-color: var(--accent); }
-
-  /* Size quick buttons */
-  .size-btns {
+  .qe-row {
     display: flex;
-    gap: 3px;
-    margin-top: 5px;
+    align-items: center;
+    gap: 8px;
     flex-wrap: wrap;
   }
 
-  .size-btn {
-    font-family: var(--mono);
+  .qe-section-label {
     font-size: 9px;
-    padding: 3px 6px;
-    background: var(--bg);
-    border: 1px solid var(--border2);
-    border-radius: 3px;
-    color: var(--muted);
-    cursor: pointer;
-    transition: all 0.1s;
-  }
-
-  .size-btn:hover, .size-btn.active { background: var(--border2); color: var(--text); border-color: var(--accent); }
-
-  .submit-btn {
-    font-family: var(--mono);
-    font-size: 12px;
-    font-weight: 700;
-    padding: 0 16px;
-    height: 100%;
-    min-height: 36px;
-    background: var(--accent);
-    color: #0b0e14;
-    border: none;
-    border-radius: 4px;
-    cursor: pointer;
-    flex-shrink: 0;
-    transition: opacity 0.1s;
-    align-self: flex-end;
-  }
-
-  .submit-btn:hover { opacity: 0.85; }
-  .submit-btn:active { opacity: 0.7; }
-
-  .flash-msg {
-    font-family: var(--mono);
-    font-size: 10px;
-    color: var(--win);
-    text-align: center;
-    height: 14px;
-    margin-top: 3px;
-  }
-
-  /* ── STATS ── */
-  .stats-row {
-    display: grid;
-    grid-template-columns: repeat(5, 1fr);
-    gap: 5px;
-    flex-shrink: 0;
-  }
-
-  .stat-card {
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: 5px;
-    padding: 6px 8px;
-  }
-
-  .stat-label { font-size: 9px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; }
-  .stat-value { font-family: var(--mono); font-size: 13px; font-weight: 700; color: var(--text); }
-  .stat-value.win  { color: var(--win); }
-  .stat-value.loss { color: var(--loss); }
-
-  /* ── TABLE ── */
-  .table-wrap {
-    flex: 1;
-    overflow: hidden;
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: 6px;
-    display: flex;
-    flex-direction: column;
-  }
-
-  table { width: 100%; border-collapse: collapse; }
-
-  thead th {
-    font-family: var(--mono);
-    font-size: 9px;
-    font-weight: 600;
     color: var(--muted);
     text-transform: uppercase;
-    letter-spacing: 0.08em;
-    padding: 7px 8px;
-    text-align: right;
-    border-bottom: 1px solid var(--border);
-    background: var(--bg);
-    white-space: nowrap;
-  }
-
-  thead th:first-child,
-  thead th:nth-child(2),
-  thead th:nth-child(3) { text-align: left; }
-
-  tbody tr { border-bottom: 1px solid var(--border); }
-  tbody tr:last-child { border-bottom: none; }
-  tbody tr:hover { background: rgba(255,255,255,0.02); }
-  tbody tr.row-long  { border-left: 2px solid var(--long); }
-  tbody tr.row-short { border-left: 2px solid var(--short); }
-  tbody tr.row-empty { border-left: 2px solid transparent; }
-
-  td {
-    font-family: var(--mono);
-    font-size: 11px;
-    padding: 6px 8px;
-    color: var(--neutral);
-    text-align: right;
-    white-space: nowrap;
-  }
-
-  td:first-child { text-align: left; width: 22px; }
-  td:nth-child(2) { text-align: left; }
-  td:nth-child(3) { text-align: left; }
-
-  .dir-long  { color: var(--long);  font-weight: 600; }
-  .dir-short { color: var(--short); font-weight: 600; }
-  .pnl-win   { color: var(--win);  font-weight: 700; }
-  .pnl-loss  { color: var(--loss); font-weight: 700; }
-  .pts-win   { color: var(--win); }
-  .pts-loss  { color: var(--loss); }
-  .row-num   { color: var(--border2); font-size: 9px; }
-  .time-cell { color: var(--muted); font-size: 10px; }
-
-  @keyframes flash-in {
-    0%   { background: rgba(122,162,247,0.15); }
-    100% { background: transparent; }
-  }
-  tr.new-trade { animation: flash-in 1.2s ease-out; }
-
-  .empty-state {
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    gap: 8px;
-    color: var(--muted);
-  }
-
-  .empty-state .icon { font-size: 24px; opacity: 0.3; }
-
-  /* ── FOOTER ── */
-  .footer {
-    padding: 4px 10px;
-    background: var(--bg);
-    border-top: 1px solid var(--border);
-    display: flex;
-    align-items: center;
-    gap: 6px;
+    letter-spacing: .06em;
     flex-shrink: 0;
+    width: 40px;
   }
 
-  .clear-btn {
-    margin-left: auto;
-    font-family: var(--mono);
-    font-size: 9px;
-    color: var(--muted);
-    background: none;
-    border: 1px solid var(--border2);
-    border-radius: 3px;
-    padding: 2px 7px;
-    cursor: pointer;
-    transition: all 0.15s;
+  /* Direction buttons */
+  .qe-dirs { display:flex; gap:5px; }
+  .qe-dir {
+    font-family:var(--mono); font-size:12px; font-weight:700;
+    padding:5px 14px; border-radius:4px; cursor:pointer;
+    border:1px solid var(--border2); background:var(--bg); color:var(--muted);
+    transition:all .1s;
   }
+  .qe-dir.long.active  { background:rgba(74,222,128,.15); border-color:var(--long);  color:var(--long); }
+  .qe-dir.short.active { background:rgba(248,113,113,.15); border-color:var(--short); color:var(--short); }
+  .qe-dir:hover:not(.active) { border-color:var(--text); color:var(--text); }
 
-  .clear-btn:hover { color: var(--loss); border-color: var(--loss); }
+  /* Size buttons */
+  .qe-sizes { display:flex; gap:4px; flex-wrap:wrap; }
+  .qe-size {
+    font-family:var(--mono); font-size:11px;
+    padding:5px 9px; border-radius:3px; cursor:pointer;
+    border:1px solid var(--border2); background:var(--bg); color:var(--muted);
+    transition:all .1s;
+  }
+  .qe-size.active { background:var(--accent); border-color:var(--accent); color:#0b0e14; font-weight:700; }
+  .qe-size:hover:not(.active) { border-color:var(--accent); color:var(--text); }
 
-  ::-webkit-scrollbar { width: 4px; }
-  ::-webkit-scrollbar-track { background: transparent; }
-  ::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 2px; }
+  /* Save button */
+  .qe-save {
+    font-family:var(--mono); font-size:12px; font-weight:700;
+    padding:6px 20px; background:var(--win); color:#0b0e14;
+    border:none; border-radius:4px; cursor:pointer; flex-shrink:0;
+    transition:opacity .1s; margin-left:auto;
+  }
+  .qe-save:hover{opacity:.85} .qe-save:active{opacity:.7}
+
+  /* TABLE */
+  .table-wrap { flex:1; overflow:hidden; background:var(--surface); border:1px solid var(--border); border-radius:6px; display:flex; flex-direction:column; }
+  table { width:100%; border-collapse:collapse; }
+  thead th { font-family:var(--mono); font-size:9px; font-weight:600; color:var(--muted); text-transform:uppercase; letter-spacing:.08em; padding:7px 8px; text-align:right; border-bottom:1px solid var(--border); background:var(--bg); white-space:nowrap; }
+  thead th:first-child,thead th:nth-child(2),thead th:nth-child(3){text-align:left}
+  tbody tr { border-bottom:1px solid var(--border); }
+  tbody tr:last-child{border-bottom:none}
+  tbody tr.row-long  { border-left:2px solid var(--long); }
+  tbody tr.row-short { border-left:2px solid var(--short); }
+  tbody tr.row-empty { border-left:2px solid transparent; }
+  td { font-family:var(--mono); font-size:11px; padding:6px 8px; color:var(--neutral); text-align:right; white-space:nowrap; }
+  td:first-child{text-align:left;width:22px} td:nth-child(2){text-align:left} td:nth-child(3){text-align:left}
+  .dir-long{color:var(--long);font-weight:600} .dir-short{color:var(--short);font-weight:600}
+  .pnl-win{color:var(--win);font-weight:700} .pnl-loss{color:var(--loss);font-weight:700}
+  .pts-win{color:var(--win)} .pts-loss{color:var(--loss)}
+  .row-num{color:var(--border2);font-size:9px} .time-cell{color:var(--muted);font-size:10px}
+  @keyframes flash-in{0%{background:rgba(122,162,247,.2)}100%{background:transparent}}
+  tr.new-trade{animation:flash-in 2s ease-out}
+
+  .empty-state{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;color:var(--muted)}
+  .empty-state .icon{font-size:24px;opacity:.3}
+
+  .footer{padding:4px 10px;background:var(--bg);border-top:1px solid var(--border);display:flex;align-items:center;flex-shrink:0}
+  .clear-btn{margin-left:auto;font-family:var(--mono);font-size:9px;color:var(--muted);background:none;border:1px solid var(--border2);border-radius:3px;padding:2px 7px;cursor:pointer}
+  .clear-btn:hover{color:var(--loss);border-color:var(--loss)}
+  ::-webkit-scrollbar{width:4px} ::-webkit-scrollbar-thumb{background:var(--border2);border-radius:2px}
 </style>
 </head>
 <body>
@@ -312,247 +164,186 @@
   <!-- Header -->
   <div class="header">
     <div style="display:flex;align-items:center">
+      <span class="pulse"></span>
       <span class="logo">SCALP JOURNAL</span>
-      <span class="symbol-badge">BTC/USD · CFD</span>
+      <span class="badge">BTC/USD · CFD</span>
     </div>
-    <span class="last-update" id="lastUpdate">—</span>
+    <span class="last-update" id="lastUpdate">connecting…</span>
   </div>
 
-  <!-- Quick Entry Form -->
-  <div class="entry-form">
-    <div class="form-row">
-
-      <!-- Direction -->
-      <div class="dir-btns">
-        <button class="dir-btn long" id="btnLong" onclick="setDir('Long')">LONG</button>
-        <button class="dir-btn short" id="btnShort" onclick="setDir('Short')">SHORT</button>
-      </div>
-
-      <!-- Entry -->
-      <div class="form-field">
-        <label>Entry</label>
-        <input type="number" id="entryPrice" placeholder="63,450.00" step="0.01">
-      </div>
-
-      <!-- Exit -->
-      <div class="form-field">
-        <label>Exit</label>
-        <input type="number" id="exitPrice" placeholder="63,512.00" step="0.01">
-      </div>
-
-      <!-- Size -->
-      <div class="form-field">
-        <label>Lots</label>
-        <input type="number" id="tradeSize" placeholder="0.6" step="0.01">
-      </div>
-
-      <!-- Submit -->
-      <button class="submit-btn" onclick="submitTrade()">LOG</button>
+  <!-- AUTO QUICK EDIT — slides in when new trade detected -->
+  <div class="quick-edit" id="quickEdit">
+    <div class="qe-top">
+      <span class="qe-new-badge">NEW TRADE</span>
+      <span class="qe-trade-info" id="qeInfo">—</span>
+      <button class="qe-dismiss" onclick="dismissEdit()">✕ dismiss</button>
     </div>
 
-    <!-- Quick size buttons -->
-    <div class="size-btns">
-      <span style="font-size:9px;color:var(--muted);align-self:center;margin-right:2px;">Quick size:</span>
-      <button class="size-btn" onclick="setSize(0.01)">0.01</button>
-      <button class="size-btn" onclick="setSize(0.02)">0.02</button>
-      <button class="size-btn" onclick="setSize(0.05)">0.05</button>
-      <button class="size-btn" onclick="setSize(0.08)">0.08</button>
-      <button class="size-btn" onclick="setSize(0.1)">0.1</button>
-      <button class="size-btn" onclick="setSize(0.2)">0.2</button>
-      <button class="size-btn" onclick="setSize(0.4)">0.4</button>
-      <button class="size-btn" onclick="setSize(0.5)">0.5</button>
-      <button class="size-btn" onclick="setSize(0.6)">0.6</button>
-      <button class="size-btn" onclick="setSize(0.8)">0.8</button>
-      <button class="size-btn" onclick="setSize(1)">1</button>
+    <div class="qe-row">
+      <span class="qe-section-label">Dir</span>
+      <div class="qe-dirs">
+        <button class="qe-dir long"  id="qeLong"  onclick="setDir('Long')">LONG</button>
+        <button class="qe-dir short" id="qeShort" onclick="setDir('Short')">SHORT</button>
+      </div>
     </div>
 
-    <div class="flash-msg" id="flashMsg"></div>
+    <div class="qe-row">
+      <span class="qe-section-label">Size</span>
+      <div class="qe-sizes" id="qeSizes"></div>
+      <button class="qe-save" onclick="saveEdit()">✓ Done</button>
+    </div>
   </div>
 
   <!-- Stats -->
   <div class="stats-row">
-    <div class="stat-card">
-      <div class="stat-label">Net P&L</div>
-      <div class="stat-value" id="statNet">—</div>
-    </div>
-    <div class="stat-card">
-      <div class="stat-label">Win Rate</div>
-      <div class="stat-value" id="statWr">—</div>
-    </div>
-    <div class="stat-card">
-      <div class="stat-label">W / L</div>
-      <div class="stat-value" id="statWl">—</div>
-    </div>
-    <div class="stat-card">
-      <div class="stat-label">Best</div>
-      <div class="stat-value win" id="statBest">—</div>
-    </div>
-    <div class="stat-card">
-      <div class="stat-label">Worst</div>
-      <div class="stat-value loss" id="statWorst">—</div>
-    </div>
+    <div class="stat-card"><div class="stat-label">Net P&L</div><div class="stat-value" id="statNet">—</div></div>
+    <div class="stat-card"><div class="stat-label">Win Rate</div><div class="stat-value" id="statWr">—</div></div>
+    <div class="stat-card"><div class="stat-label">W / L</div><div class="stat-value" id="statWl">—</div></div>
+    <div class="stat-card"><div class="stat-label">Best</div><div class="stat-value win" id="statBest">—</div></div>
+    <div class="stat-card"><div class="stat-label">Worst</div><div class="stat-value loss" id="statWorst">—</div></div>
   </div>
 
   <!-- Table -->
   <div class="table-wrap">
     <table id="tradeTable" style="display:none">
       <thead>
-        <tr>
-          <th>#</th>
-          <th>Dir</th>
-          <th>Time</th>
-          <th>Entry</th>
-          <th>Exit</th>
-          <th>Points</th>
-          <th>Size</th>
-          <th>P&L</th>
-        </tr>
+        <tr><th>#</th><th>Dir</th><th>Time</th><th>Entry</th><th>Exit</th><th>Points</th><th>Size</th><th>P&L</th></tr>
       </thead>
       <tbody id="tradeBody"></tbody>
     </table>
     <div class="empty-state" id="emptyState">
       <span class="icon">⬡</span>
-      <p>No trades yet — log your first trade above</p>
+      <p>Waiting for first trade via TradingView alert…</p>
     </div>
   </div>
 
-  <!-- Footer -->
   <div class="footer">
+    <span style="font-family:var(--mono);font-size:9px;color:var(--muted)">Trade logs automatically → edit panel opens instantly</span>
     <button class="clear-btn" onclick="clearTrades()">Clear all</button>
   </div>
 
 </div>
-
 <script>
-  let direction = 'Long';
-  let lastTradeIds = new Set();
+  const SIZES = [0.01,0.02,0.05,0.08,0.1,0.2,0.4,0.5,0.6,0.8,1];
+  let lastIds    = new Set();
+  let editId     = null;
+  let editDir    = 'Long';
+  let editSize   = null;
+  let tradesCache = [];
 
-  // ── FORM ────────────────────────────────────────────────────────────────────
+  // Build size buttons once
+  const sizesEl = document.getElementById('qeSizes');
+  SIZES.forEach(s => {
+    const b = document.createElement('button');
+    b.className   = 'qe-size';
+    b.textContent = s;
+    b.onclick     = () => setSize(s);
+    sizesEl.appendChild(b);
+  });
+
+  // ── QUICK EDIT CONTROLS ────────────────────────────────────────────────────
   function setDir(dir) {
-    direction = dir;
-    document.getElementById('btnLong').classList.toggle('active', dir === 'Long');
-    document.getElementById('btnShort').classList.toggle('active', dir === 'Short');
+    editDir = dir;
+    document.getElementById('qeLong').classList.toggle('active',  dir==='Long');
+    document.getElementById('qeShort').classList.toggle('active', dir==='Short');
   }
 
   function setSize(s) {
-    document.getElementById('tradeSize').value = s;
-    document.querySelectorAll('.size-btn').forEach(b => {
+    editSize = s;
+    document.querySelectorAll('.qe-size').forEach(b => {
       b.classList.toggle('active', parseFloat(b.textContent) === s);
     });
   }
 
-  // Set Long as default
-  setDir('Long');
-
-  // Tab between fields quickly
-  document.getElementById('entryPrice').addEventListener('keydown', e => {
-    if (e.key === 'Enter') document.getElementById('exitPrice').focus();
-  });
-  document.getElementById('exitPrice').addEventListener('keydown', e => {
-    if (e.key === 'Enter') document.getElementById('tradeSize').focus();
-  });
-  document.getElementById('tradeSize').addEventListener('keydown', e => {
-    if (e.key === 'Enter') submitTrade();
-  });
-
-  async function submitTrade() {
-    const entry = parseFloat(document.getElementById('entryPrice').value);
-    const exit  = parseFloat(document.getElementById('exitPrice').value);
-    const size  = parseFloat(document.getElementById('tradeSize').value);
-
-    if (!entry || !exit || !size) {
-      flash('Fill in all fields', 'var(--loss)');
-      return;
-    }
-
-    const btn = document.querySelector('.submit-btn');
-    btn.textContent = '...';
-    btn.disabled = true;
-
-    try {
-      const res = await fetch('/api/trade', {
-        method:  'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify({ direction, entry_price: entry, exit_price: exit, size, ppp: 1.0 })
-      });
-
-      if (res.ok) {
-        const pts = direction === 'Long' ? exit - entry : entry - exit;
-        const pnl = pts * size * 1.0;
-        const sign = pnl >= 0 ? '+' : '';
-        flash(`Logged ✓  ${sign}$${Math.abs(pnl).toFixed(2)}`, pnl >= 0 ? 'var(--win)' : 'var(--loss)');
-        // Clear entry/exit but keep size and direction for fast re-entry
-        document.getElementById('entryPrice').value = '';
-        document.getElementById('exitPrice').value  = '';
-        document.getElementById('entryPrice').focus();
-        poll();
-      } else {
-        flash('Error — try again', 'var(--loss)');
-      }
-    } catch {
-      flash('Network error', 'var(--loss)');
-    }
-
-    btn.textContent = 'LOG';
-    btn.disabled = false;
+  function dismissEdit() {
+    editId = null;
+    document.getElementById('quickEdit').classList.remove('visible');
   }
 
-  function flash(msg, color) {
-    const el = document.getElementById('flashMsg');
-    el.textContent  = msg;
-    el.style.color  = color;
-    setTimeout(() => { el.textContent = ''; }, 3000);
+  async function saveEdit() {
+    if (!editId) return;
+    const body = {};
+    if (editSize)  body.size      = editSize;
+    if (editDir)   body.direction = editDir;
+
+    await fetch(`/api/trade/${editId}`, {
+      method:  'PATCH',
+      headers: {'Content-Type':'application/json'},
+      body:    JSON.stringify(body)
+    });
+
+    dismissEdit();
+    poll();
   }
 
-  // ── FORMAT ──────────────────────────────────────────────────────────────────
+  // Save on Enter key
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Enter' && editId) saveEdit();
+    if (e.key === 'Escape') dismissEdit();
+  });
+
+  // ── AUTO-OPEN on new trade ─────────────────────────────────────────────────
+  function checkForNewTrade(closed) {
+    const newIds = new Set(closed.map(t => t.id));
+    const brandNew = closed.find(t => !lastIds.has(t.id));
+
+    if (brandNew && !editId) {
+      editId   = brandNew.id;
+      editSize = null;
+
+      // Pre-select current direction
+      setDir(brandNew.direction);
+
+      // Pre-highlight current size if it matches a button
+      document.querySelectorAll('.qe-size').forEach(b => b.classList.remove('active'));
+      const match = SIZES.find(s => s === brandNew.size);
+      if (match) setSize(match);
+
+      // Show trade info
+      document.getElementById('qeInfo').textContent =
+        `${brandNew.direction} · ${fmt.price(brandNew.entry_price)} → ${fmt.price(brandNew.exit_price)} · ${fmt.pts(brandNew.points)} pts`;
+
+      document.getElementById('quickEdit').classList.add('visible');
+    }
+
+    lastIds = newIds;
+  }
+
+  // ── FORMAT ─────────────────────────────────────────────────────────────────
   const fmt = {
-    price: v => v == null ? '—' : Number(v).toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2}),
-    pts:   v => v == null ? '—' : (v >= 0 ? '+' : '') + Number(v).toFixed(2),
-    pnl:   v => v == null ? '—' : (v >= 0 ? '+$' : '-$') + Math.abs(v).toFixed(2),
-    time:  v => { if (!v) return '—'; return new Date(v).toLocaleTimeString('en-GB', {hour:'2-digit',minute:'2-digit',second:'2-digit'}); },
+    price: v => v==null?'—':Number(v).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2}),
+    pts:   v => v==null?'—':(v>=0?'+':'')+Number(v).toFixed(2),
+    pnl:   v => v==null?'—':(v>=0?'+$':'-$')+Math.abs(v).toFixed(2),
+    time:  v => { if(!v) return '—'; return new Date(v).toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit',second:'2-digit'}); },
   };
 
-  // ── POLL ────────────────────────────────────────────────────────────────────
-  async function poll() {
-    try {
-      const r    = await fetch('/api/trades');
-      const data = await r.json();
-      render(data);
-      document.getElementById('lastUpdate').textContent = 'updated ' + new Date().toLocaleTimeString('en-GB');
-    } catch {}
-  }
+  // ── RENDER ─────────────────────────────────────────────────────────────────
+  function render({closed, stats}) {
+    document.getElementById('lastUpdate').textContent = 'updated '+new Date().toLocaleTimeString('en-GB');
+    tradesCache = closed;
 
-  function render({ closed, stats }) {
-    // Stats
+    checkForNewTrade(closed);
+
     if (stats && stats.total > 0) {
-      const wr    = stats.wins / (stats.wins + stats.losses);
-      const netEl = document.getElementById('statNet');
-      netEl.textContent = fmt.pnl(stats.net_pnl);
-      netEl.className   = 'stat-value ' + (stats.net_pnl >= 0 ? 'win' : 'loss');
-      document.getElementById('statWr').textContent    = Math.round(wr * 100) + '%';
-      document.getElementById('statWl').textContent    = stats.wins + 'W / ' + stats.losses + 'L';
+      const wr = stats.wins/(stats.wins+stats.losses);
+      const n  = document.getElementById('statNet');
+      n.textContent = fmt.pnl(stats.net_pnl);
+      n.className   = 'stat-value '+(stats.net_pnl>=0?'win':'loss');
+      document.getElementById('statWr').textContent    = Math.round(wr*100)+'%';
+      document.getElementById('statWl').textContent    = stats.wins+'W / '+stats.losses+'L';
       document.getElementById('statBest').textContent  = fmt.pnl(stats.best);
       document.getElementById('statWorst').textContent = fmt.pnl(stats.worst);
     }
 
-    // Table
     const tbody = document.getElementById('tradeBody');
     const empty = document.getElementById('emptyState');
     const table = document.getElementById('tradeTable');
 
-    if (!closed.length) {
-      table.style.display = 'none';
-      empty.style.display = 'flex';
-      return;
-    }
-
-    table.style.display = '';
-    empty.style.display = 'none';
+    if (!closed.length) { table.style.display='none'; empty.style.display='flex'; return; }
+    table.style.display=''; empty.style.display='none';
 
     const rows = [...closed];
     while (rows.length < 8) rows.push(null);
-
-    const newIds = new Set(closed.map(t => t.id));
     tbody.innerHTML = '';
 
     rows.forEach((trade, i) => {
@@ -561,11 +352,11 @@
         tr.className = 'row-empty';
         tr.innerHTML = `<td class="row-num">${i+1}</td><td>—</td><td class="time-cell">—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td>`;
       } else {
-        const isNew    = !lastTradeIds.has(trade.id);
-        tr.className   = 'row-' + trade.direction.toLowerCase() + (isNew ? ' new-trade' : '');
-        const ptsClass = trade.points >= 0 ? 'pts-win' : 'pts-loss';
-        const pnlClass = trade.pnl    >= 0 ? 'pnl-win' : 'pnl-loss';
-        const dirClass = trade.direction === 'Long' ? 'dir-long' : 'dir-short';
+        const isNew    = editId === trade.id;
+        tr.className   = 'row-'+trade.direction.toLowerCase()+(isNew?' new-trade':'');
+        const ptsClass = trade.points>=0?'pts-win':'pts-loss';
+        const pnlClass = trade.pnl>=0?'pnl-win':'pnl-loss';
+        const dirClass = trade.direction==='Long'?'dir-long':'dir-short';
         tr.innerHTML = `
           <td class="row-num">${i+1}</td>
           <td class="${dirClass}">${trade.direction}</td>
@@ -578,18 +369,25 @@
       }
       tbody.appendChild(tr);
     });
+  }
 
-    lastTradeIds = newIds;
+  // ── POLL ───────────────────────────────────────────────────────────────────
+  async function poll() {
+    try {
+      const r = await fetch('/api/trades');
+      render(await r.json());
+    } catch {}
   }
 
   async function clearTrades() {
     if (!confirm('Clear all trades?')) return;
-    await fetch('/api/trades', { method: 'DELETE' });
+    await fetch('/api/trades',{method:'DELETE'});
+    dismissEdit();
     poll();
   }
 
   poll();
-  setInterval(poll, 3000);
+  setInterval(poll, 2000);
 </script>
 </body>
 </html>
