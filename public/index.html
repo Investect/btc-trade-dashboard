@@ -505,9 +505,10 @@ const fmt = {
 
 // ── LIVE TABLE ───────────────────────────────────────────────────────────────
 function renderLive(trades, stats) {
-  const last8  = [...trades].sort((a,b)=>b.exit_time-a.exit_time).slice(0,8);
-  const newIds = new Set(last8.map(t=>t.id));
-  const brandNew = last8.find(t=>!lastIds.has(t.id));
+  // Always detect new trades from ALL trades, not filtered subset
+  const allSorted = [...allTrades].sort((a,b)=>b.exit_time-a.exit_time);
+  const allIds    = new Set(allSorted.map(t=>t.id));
+  const brandNew  = allSorted.find(t=>!lastIds.has(t.id));
 
   if (brandNew && !editId) {
     editId = brandNew.id; editSize = null;
@@ -518,9 +519,12 @@ function renderLive(trades, stats) {
       `${brandNew.direction} · ${fmt.price(brandNew.entry_price)} → ${fmt.price(brandNew.exit_price)} · ${fmt.pts(brandNew.points)} pts`;
     document.getElementById('ntb').classList.add('visible');
   }
-  lastIds = newIds;
+  lastIds = allIds;
 
-  if (stats && stats.total > 0) {
+  // Use filtered trades for display
+  const last8 = [...trades].sort((a,b)=>b.exit_time-a.exit_time).slice(0,8);
+
+  if (stats && stats.total > 0 && activeDateFilter === 'all') {
     const wr = stats.wins/(stats.wins+stats.losses);
     const n  = document.getElementById('statNet');
     n.textContent = fmt.pnl(stats.net_pnl); n.className = 'stat-value '+(stats.net_pnl>=0?'win':'loss');
@@ -528,6 +532,20 @@ function renderLive(trades, stats) {
     document.getElementById('statWl').textContent    = stats.wins+'W / '+stats.losses+'L';
     document.getElementById('statBest').textContent  = fmt.pnl(stats.best);
     document.getElementById('statWorst').textContent = fmt.pnl(stats.worst);
+  } else {
+    // Recalculate stats from filtered trades
+    const fWins   = trades.filter(t=>t.pnl>0).length;
+    const fLosses = trades.filter(t=>t.pnl<0).length;
+    const fNet    = trades.reduce((s,t)=>s+(t.pnl||0),0);
+    const fPnls   = trades.map(t=>t.pnl).filter(v=>v!=null);
+    const fWr     = fWins+fLosses>0 ? Math.round(fWins/(fWins+fLosses)*100) : 0;
+    const n       = document.getElementById('statNet');
+    n.textContent = trades.length ? fmt.pnl(fNet) : '—';
+    n.className   = 'stat-value '+(fNet>=0?'win':'loss');
+    document.getElementById('statWr').textContent    = trades.length ? fWr+'%' : '—';
+    document.getElementById('statWl').textContent    = trades.length ? fWins+'W / '+fLosses+'L' : '—';
+    document.getElementById('statBest').textContent  = fPnls.length ? fmt.pnl(Math.max(...fPnls)) : '—';
+    document.getElementById('statWorst').textContent = fPnls.length ? fmt.pnl(Math.min(...fPnls)) : '—';
   }
 
   const tbody = document.getElementById('liveBody');
