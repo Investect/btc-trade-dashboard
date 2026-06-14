@@ -198,41 +198,6 @@
   tbody tr.row-expanded { background:rgba(122,162,247,0.04); }
   tbody tr:hover { background:rgba(255,255,255,.02); cursor:pointer; }
 
-  /* DATE TABS */
-  .date-tabs { display:flex; align-items:center; gap:3px; padding:6px 14px; background:var(--bg); border-bottom:1px solid var(--border); flex-shrink:0; overflow-x:auto; scrollbar-width:none; }
-  .date-tabs::-webkit-scrollbar { display:none; }
-  .date-tab { font-family:var(--mono); font-size:10px; padding:4px 10px; border-radius:4px; cursor:pointer; border:1px solid var(--border2); background:var(--surface); color:var(--muted); white-space:nowrap; transition:all .15s; flex-shrink:0; text-align:center; min-width:54px; }
-  .date-tab:hover { border-color:var(--accent); color:var(--text); }
-  .date-tab.active { background:rgba(122,162,247,.15); border-color:var(--accent); color:var(--accent); font-weight:700; }
-  .date-tab.has-trades.win { border-color:var(--win); }
-  .date-tab.has-trades.loss { border-color:var(--loss); }
-  .date-tab.has-trades.win.active { background:rgba(74,222,128,.15); color:var(--win); }
-  .date-tab.has-trades.loss.active { background:rgba(248,113,113,.15); color:var(--loss); }
-  .date-tab .tab-date { font-size:11px; font-weight:700; }
-  .date-tab .tab-pnl { font-size:9px; margin-top:1px; }
-  .date-tab .tab-pnl.win { color:var(--win); }
-  .date-tab .tab-pnl.loss { color:var(--loss); }
-  .date-tab-sep { width:1px; height:24px; background:var(--border2); flex-shrink:0; margin:0 4px; }
-
-  /* MINI CALENDAR POPUP */
-  .cal-picker-btn { font-family:var(--mono); font-size:10px; padding:4px 10px; border-radius:4px; cursor:pointer; border:1px solid var(--border2); background:var(--surface); color:var(--muted); white-space:nowrap; flex-shrink:0; }
-  .cal-picker-btn:hover { border-color:var(--accent); color:var(--accent); }
-  .cal-popup { display:none; position:fixed; z-index:200; background:var(--surface); border:1px solid var(--accent); border-radius:8px; padding:12px; box-shadow:0 8px 32px rgba(0,0,0,.6); width:220px; }
-  .cal-popup.visible { display:block; }
-  .cal-popup-header { display:flex; align-items:center; justify-content:space-between; margin-bottom:8px; }
-  .cal-popup-nav { background:none; border:none; color:var(--text); cursor:pointer; font-size:14px; padding:2px 6px; }
-  .cal-popup-nav:hover { color:var(--accent); }
-  .cal-popup-month { font-family:var(--mono); font-size:11px; font-weight:700; color:var(--text); }
-  .cal-popup-grid { display:grid; grid-template-columns:repeat(7,1fr); gap:2px; }
-  .cal-popup-dow { font-size:8px; color:var(--muted); text-align:center; padding:2px; }
-  .cal-popup-day { font-family:var(--mono); font-size:10px; padding:4px 2px; text-align:center; border-radius:3px; cursor:pointer; color:var(--muted); transition:all .1s; }
-  .cal-popup-day:hover { background:var(--border2); color:var(--text); }
-  .cal-popup-day.today { border:1px solid var(--accent); color:var(--accent); }
-  .cal-popup-day.selected { background:var(--accent); color:#0b0e14; font-weight:700; }
-  .cal-popup-day.has-trades { color:var(--text); font-weight:600; }
-  .cal-popup-day.win { color:var(--win); }
-  .cal-popup-day.loss { color:var(--loss); }
-  .cal-popup-day.empty { cursor:default; }
   ::-webkit-scrollbar{width:4px;height:4px}
   ::-webkit-scrollbar-thumb{background:var(--border2);border-radius:2px}
 </style>
@@ -505,10 +470,9 @@ const fmt = {
 
 // ── LIVE TABLE ───────────────────────────────────────────────────────────────
 function renderLive(trades, stats) {
-  // Always detect new trades from ALL trades, not filtered subset
-  const allSorted = [...allTrades].sort((a,b)=>b.exit_time-a.exit_time);
-  const allIds    = new Set(allSorted.map(t=>t.id));
-  const brandNew  = allSorted.find(t=>!lastIds.has(t.id));
+    const last8  = [...trades].sort((a,b)=>b.exit_time-a.exit_time).slice(0,8);
+  const newIds = new Set(last8.map(t=>t.id));
+  const brandNew = last8.find(t=>!lastIds.has(t.id));
 
   if (brandNew && !editId) {
     editId = brandNew.id; editSize = null;
@@ -519,12 +483,9 @@ function renderLive(trades, stats) {
       `${brandNew.direction} · ${fmt.price(brandNew.entry_price)} → ${fmt.price(brandNew.exit_price)} · ${fmt.pts(brandNew.points)} pts`;
     document.getElementById('ntb').classList.add('visible');
   }
-  lastIds = allIds;
+  lastIds = newIds;
 
-  // Use filtered trades for display
-  const last8 = [...trades].sort((a,b)=>b.exit_time-a.exit_time).slice(0,8);
-
-  if (stats && stats.total > 0 && activeDateFilter === 'all') {
+  if (stats && stats.total > 0) {
     const wr = stats.wins/(stats.wins+stats.losses);
     const n  = document.getElementById('statNet');
     n.textContent = fmt.pnl(stats.net_pnl); n.className = 'stat-value '+(stats.net_pnl>=0?'win':'loss');
@@ -532,20 +493,6 @@ function renderLive(trades, stats) {
     document.getElementById('statWl').textContent    = stats.wins+'W / '+stats.losses+'L';
     document.getElementById('statBest').textContent  = fmt.pnl(stats.best);
     document.getElementById('statWorst').textContent = fmt.pnl(stats.worst);
-  } else {
-    // Recalculate stats from filtered trades
-    const fWins   = trades.filter(t=>t.pnl>0).length;
-    const fLosses = trades.filter(t=>t.pnl<0).length;
-    const fNet    = trades.reduce((s,t)=>s+(t.pnl||0),0);
-    const fPnls   = trades.map(t=>t.pnl).filter(v=>v!=null);
-    const fWr     = fWins+fLosses>0 ? Math.round(fWins/(fWins+fLosses)*100) : 0;
-    const n       = document.getElementById('statNet');
-    n.textContent = trades.length ? fmt.pnl(fNet) : '—';
-    n.className   = 'stat-value '+(fNet>=0?'win':'loss');
-    document.getElementById('statWr').textContent    = trades.length ? fWr+'%' : '—';
-    document.getElementById('statWl').textContent    = trades.length ? fWins+'W / '+fLosses+'L' : '—';
-    document.getElementById('statBest').textContent  = fPnls.length ? fmt.pnl(Math.max(...fPnls)) : '—';
-    document.getElementById('statWorst').textContent = fPnls.length ? fmt.pnl(Math.min(...fPnls)) : '—';
   }
 
   const tbody = document.getElementById('liveBody');
@@ -913,14 +860,7 @@ async function poll() {
     const data = await r.json();
     allTrades  = data.closed || [];
     document.getElementById('lastUpdate').textContent = 'updated '+new Date().toLocaleTimeString('en-GB');
-    buildDateTabs();
-    if (activeTab==='live') {
-      if (activeDateFilter === 'all') {
-        renderLive(allTrades, data.stats);
-      } else {
-        renderCurrentTab();
-      }
-    }
+    if (activeTab==='live') renderLive(allTrades, data.stats);
     if (activeTab==='diary')   renderDiaryDots();
     autoAnalyseNew();
     if (activeTab==='history') renderHistory();
@@ -946,192 +886,6 @@ async function autoAnalyseNew() {
   }
 }
 
-
-// ── DATE TABS ─────────────────────────────────────────────────────────────────
-let activeDateFilter = 'all'; // 'all' or a date string 'YYYY-MM-DD'
-let calPickerYear, calPickerMonth;
-
-function buildDateTabs() {
-  const container = document.getElementById('dateTabs');
-  const calBtn    = container.querySelector('.cal-picker-btn');
-
-  // Build day map from all trades
-  const dayMap = {};
-  for (const t of allTrades) {
-    if (!t.exit_time) continue;
-    const key = fmt.dateKey(t.exit_time);
-    if (!dayMap[key]) dayMap[key] = [];
-    dayMap[key].push(t);
-  }
-
-  // Generate tabs: 3 days back, today, 3 days forward
-  const today  = new Date();
-  today.setHours(0,0,0,0);
-  const tabs   = [];
-
-  for (let i = -3; i <= 3; i++) {
-    const d = new Date(today);
-    d.setDate(today.getDate() + i);
-    const key     = fmt.dateKey(d.getTime());
-    const label   = i === 0 ? 'Today' : i === -1 ? 'Yesterday' : i === 1 ? 'Tomorrow' : d.toLocaleDateString('en-GB',{weekday:'short',day:'numeric',month:'short'});
-    const shortLbl = i === 0 ? 'Today' : i === -1 ? 'Yest' : d.toLocaleDateString('en-GB',{day:'numeric',month:'short'});
-    const trades  = dayMap[key] || [];
-    const pnl     = trades.reduce((s,t)=>s+(t.pnl||0),0);
-    tabs.push({ key, label: shortLbl, trades, pnl, isFuture: i > 0 });
-  }
-
-  // Clear existing tabs (keep cal btn)
-  while (container.firstChild && container.firstChild !== calBtn) {
-    container.removeChild(container.firstChild);
-  }
-
-  // All tab
-  const allTab = document.createElement('button');
-  allTab.className = 'date-tab' + (activeDateFilter === 'all' ? ' active' : '');
-  allTab.innerHTML = '<div class="tab-date">All</div><div class="tab-pnl">history</div>';
-  allTab.onclick = () => { activeDateFilter = 'all'; buildDateTabs(); renderCurrentTab(); };
-  container.insertBefore(allTab, calBtn);
-
-  // Separator
-  const sep = document.createElement('div');
-  sep.className = 'date-tab-sep';
-  container.insertBefore(sep, calBtn);
-
-  // Day tabs
-  for (const tab of tabs) {
-    const btn = document.createElement('button');
-    const pnlClass = tab.trades.length ? (tab.pnl >= 0 ? 'win' : 'loss') : '';
-    const tradeClass = tab.trades.length ? ('has-trades ' + pnlClass) : '';
-    btn.className = 'date-tab ' + tradeClass + (activeDateFilter === tab.key ? ' active' : '');
-    btn.innerHTML = `<div class="tab-date">${tab.label}</div>
-      <div class="tab-pnl ${pnlClass}">${tab.trades.length ? (tab.pnl>=0?'+ {
-  if (!confirm('Clear all trades?')) return;
-  await fetch('/api/trades',{method:'DELETE'});
-  allTrades=[]; lastIds=new Set();
-  poll();
-}
-
-poll();
-setInterval(poll, 2000);
-</script>
-</body>
-</html>
-:'- {
-  if (!confirm('Clear all trades?')) return;
-  await fetch('/api/trades',{method:'DELETE'});
-  allTrades=[]; lastIds=new Set();
-  poll();
-}
-
-poll();
-setInterval(poll, 2000);
-</script>
-</body>
-</html>
-)+Math.abs(tab.pnl).toFixed(2) : tab.isFuture ? '—' : 'no trades'}</div>`;
-    btn.onclick = () => { activeDateFilter = tab.key; buildDateTabs(); renderCurrentTab(); };
-    container.insertBefore(btn, calBtn);
-  }
-}
-
-function renderCurrentTab() {
-  if (activeTab === 'live') {
-    const filtered = activeDateFilter === 'all'
-      ? allTrades
-      : allTrades.filter(t => fmt.dateKey(t.exit_time) === activeDateFilter);
-    renderLiveFiltered(filtered);
-  }
-  if (activeTab === 'history') renderHistory();
-}
-
-function renderLiveFiltered(trades) {
-  const last8  = [...trades].sort((a,b)=>b.exit_time-a.exit_time).slice(0,8);
-  const wins   = trades.filter(t=>t.pnl>0).length;
-  const losses = trades.filter(t=>t.pnl<0).length;
-  const net    = trades.reduce((s,t)=>s+(t.pnl||0),0);
-  const pnls   = trades.map(t=>t.pnl).filter(v=>v!=null);
-  renderLive(trades, {
-    total: last8.length, wins, losses, net_pnl: net,
-    best:  pnls.length ? Math.max(...pnls) : 0,
-    worst: pnls.length ? Math.min(...pnls) : 0
-  });
-}
-
-// ── CALENDAR PICKER ───────────────────────────────────────────────────────────
-function toggleCalPicker(e) {
-  const popup = document.getElementById('calPopup');
-  if (popup.classList.contains('visible')) {
-    popup.classList.remove('visible');
-    return;
-  }
-  const n = new Date();
-  calPickerYear  = n.getFullYear();
-  calPickerMonth = n.getMonth();
-  renderCalPicker();
-  const rect = e.target.getBoundingClientRect();
-  popup.style.top  = (rect.bottom + 6) + 'px';
-  popup.style.right = '14px';
-  popup.classList.add('visible');
-  e.stopPropagation();
-}
-
-function calPickerPrev() { calPickerMonth--; if (calPickerMonth<0){calPickerMonth=11;calPickerYear--;} renderCalPicker(); }
-function calPickerNext() { calPickerMonth++; if (calPickerMonth>11){calPickerMonth=0;calPickerYear++;} renderCalPicker(); }
-
-function renderCalPicker() {
-  const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-  document.getElementById('calPopupMonth').textContent = months[calPickerMonth] + ' ' + calPickerYear;
-
-  const dayMap = {};
-  for (const t of allTrades) {
-    if (!t.exit_time) continue;
-    const key = fmt.dateKey(t.exit_time);
-    if (!dayMap[key]) dayMap[key] = [];
-    dayMap[key].push(t);
-  }
-
-  const grid      = document.getElementById('calPopupGrid');
-  const firstDay  = new Date(calPickerYear, calPickerMonth, 1).getDay();
-  const daysInMon = new Date(calPickerYear, calPickerMonth+1, 0).getDate();
-  const todayStr  = fmt.dateKey(Date.now());
-
-  grid.innerHTML = '';
-  ['S','M','T','W','T','F','S'].forEach(d => {
-    const el = document.createElement('div');
-    el.className = 'cal-popup-dow'; el.textContent = d;
-    grid.appendChild(el);
-  });
-
-  for (let i=0; i<firstDay; i++) {
-    const el = document.createElement('div'); el.className='cal-popup-day empty'; grid.appendChild(el);
-  }
-
-  for (let d=1; d<=daysInMon; d++) {
-    const key    = calPickerYear+'-'+String(calPickerMonth+1).padStart(2,'0')+'-'+String(d).padStart(2,'0');
-    const trades = dayMap[key] || [];
-    const pnl    = trades.reduce((s,t)=>s+(t.pnl||0),0);
-    const el     = document.createElement('div');
-    el.textContent = d;
-    el.className = 'cal-popup-day' +
-      (key===todayStr?' today':'') +
-      (key===activeDateFilter?' selected':'') +
-      (trades.length ? (' has-trades '+(pnl>=0?'win':'loss')) : '');
-    el.onclick = () => {
-      activeDateFilter = key;
-      document.getElementById('calPopup').classList.remove('visible');
-      buildDateTabs();
-      renderCurrentTab();
-    };
-    grid.appendChild(el);
-  }
-}
-
-document.addEventListener('click', e => {
-  const popup = document.getElementById('calPopup');
-  if (popup.classList.contains('visible') && !popup.contains(e.target)) {
-    popup.classList.remove('visible');
-  }
-});
 
 async function clearTrades() {
   if (!confirm('Clear all trades?')) return;
