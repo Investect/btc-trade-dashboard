@@ -25,7 +25,7 @@ if (!fs.existsSync(DB)) writeDb({ trades: [], executions: [], nextId: 1 });
 // ─── MIDDLEWARE ──────────────────────────────────────────────────────────────
 app.use(cors());
 app.use(express.json());
-app.use(express.text({ type: '*/*' }));
+app.use(express.text({ type: 'text/*' }));
 app.use(express.static(path.join(__dirname, 'public')));
 
 // ─── WEBHOOK ─────────────────────────────────────────────────────────────────
@@ -215,28 +215,39 @@ app.patch('/api/trade/:id', (req, res) => {
 });
 
 // ─── INDICATOR SNAPSHOT STORE ─────────────────────────────────────────────────
-// Stores latest indicator snapshot from Pine Script webhook
 let latestIndicators = null;
 
-app.post('/api/indicators', (req, res) => {
+// Custom raw text parser for indicators only (TradingView sends NaN which breaks JSON)
+app.post('/api/indicators', express.text({type: '*/*'}), (req, res) => {
   try {
     let payload = req.body;
     if (typeof payload === 'string') {
-      try { payload = JSON.parse(payload); } catch { return res.status(400).json({ error: 'Invalid JSON' }); }
+      try {
+        const cleaned = payload
+          .replace(/:\s*NaN/g, ':null')
+          .replace(/:\s*Infinity/g, ':null')
+          .replace(/:\s*-Infinity/g, ':null');
+        payload = JSON.parse(cleaned);
+      } catch(e) {
+        console.error('Could not parse indicator payload');
+        return res.json({ ok: false, error: 'parse failed' });
+      }
     }
-    if (payload.type === 'indicators') {
-      latestIndicators = { ...payload, receivedAt: Date.now() };
-      console.log('Indicator snapshot updated:', payload.session, 'RSI:', payload.rsi?.toFixed(1));
+    if (payload && (payload.type === 'indicators' || payload.ema9 || payload.close)) {
+      latestIndicators = { ...payload, type: 'indicators', receivedAt: Date.now() };
+      console.log(`Indicators: close=${payload.close} ema9=${payload.ema9} rsi=${payload.rsi}`);
     }
     res.json({ ok: true });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    console.error('Indicator error:', err.message);
+    res.json({ ok: false, error: err.message });
   }
 });
 
 app.get('/api/indicators', (req, res) => {
   res.json(latestIndicators || {});
 });
+
 
 // ─── AUTO ANALYSIS ────────────────────────────────────────────────────────────
 function generateAutoAnalysis(trade, allTrades, indicators) {
