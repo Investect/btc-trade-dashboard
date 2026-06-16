@@ -35,34 +35,32 @@
 
   /* Feed items */
   .intel-item{background:var(--surface);border:1px solid var(--border);border-radius:5px;overflow:hidden}
-  .intel-item-header{padding:7px 9px;cursor:pointer;display:flex;align-items:flex-start;gap:7px}
+  .intel-item-header{padding:8px 9px;cursor:pointer;display:flex;flex-direction:column;gap:4px}
   .intel-item-header:hover{background:rgba(255,255,255,.02)}
-  .score-badge{flex-shrink:0;width:22px;height:22px;border-radius:4px;display:flex;align-items:center;justify-content:center;font-family:var(--mono);font-size:11px;font-weight:700;margin-top:1px}
-  .s5{background:rgba(248,113,113,.15);color:#f87171;border:1px solid rgba(248,113,113,.3)}
-  .s4{background:rgba(251,146,60,.15);color:#fb923c;border:1px solid rgba(251,146,60,.3)}
-  .s3{background:rgba(250,204,21,.15);color:#fbbf24;border:1px solid rgba(250,204,21,.3)}
+  .intel-item-top{display:flex;align-items:center;gap:5px}
+  .score-badge{flex-shrink:0;width:20px;height:20px;border-radius:3px;display:flex;align-items:center;justify-content:center;font-family:var(--mono);font-size:10px;font-weight:700}
+  .s5{background:rgba(248,113,113,.2);color:#f87171;border:1px solid rgba(248,113,113,.4)}
+  .s4{background:rgba(251,146,60,.2);color:#fb923c;border:1px solid rgba(251,146,60,.4)}
+  .s3{background:rgba(250,204,21,.2);color:#fbbf24;border:1px solid rgba(250,204,21,.4)}
   .s2{background:rgba(74,222,128,.15);color:#4ade80;border:1px solid rgba(74,222,128,.3)}
-  .s1{background:rgba(88,95,122,.15);color:#585f7a;border:1px solid rgba(88,95,122,.3)}
-  .intel-meta{flex:1;min-width:0}
-  .intel-tags{display:flex;align-items:center;gap:4px;margin-bottom:3px;flex-wrap:wrap}
-  .intel-source{font-family:var(--mono);font-size:8px;color:var(--muted);background:var(--border);padding:1px 5px;border-radius:2px;white-space:nowrap}
-  .intel-cat{font-size:8px;padding:1px 5px;border-radius:2px;white-space:nowrap}
+  .s1{background:rgba(88,95,122,.12);color:#585f7a;border:1px solid rgba(88,95,122,.25)}
+  .intel-source{font-family:var(--mono);font-size:8px;color:var(--muted);background:var(--border);padding:1px 5px;border-radius:2px;white-space:nowrap;max-width:110px;overflow:hidden;text-overflow:ellipsis}
+  .intel-cat{font-size:8px;padding:1px 5px;border-radius:2px;white-space:nowrap;flex-shrink:0}
   .cat-macro{background:rgba(122,162,247,.15);color:#7aa2f7}
   .cat-onchain{background:rgba(74,222,128,.12);color:#4ade80}
   .cat-news{background:rgba(122,162,247,.1);color:#89b4fa}
   .cat-sentiment{background:rgba(203,166,247,.15);color:#cba6f7}
   .cat-technical{background:rgba(251,146,60,.12);color:#fb923c}
   .cat-flow{background:rgba(249,226,175,.1);color:#f9e2af}
-  .intel-time{font-family:var(--mono);font-size:8px;color:var(--muted2)}
-  .intel-headline{font-size:10px;font-weight:500;color:var(--text);line-height:1.4}
-  .intel-chevron{flex-shrink:0;font-size:10px;color:var(--muted);margin-top:4px;transition:transform .2s}
-  .intel-chevron.open{transform:rotate(180deg)}
-  .intel-body{display:none;padding:0 9px 8px 38px;border-top:1px solid var(--border)}
+  .intel-time{font-family:var(--mono);font-size:8px;color:var(--muted2);margin-left:auto;white-space:nowrap;flex-shrink:0}
+  .intel-headline{font-size:11px;font-weight:500;color:var(--text);line-height:1.45;word-break:break-word;white-space:normal}
+  .intel-chevron{font-size:9px;color:var(--muted2);flex-shrink:0;align-self:flex-start;margin-top:2px}
+  .intel-body{display:none;padding:0 9px 9px 9px;border-top:1px solid var(--border)}
   .intel-body.open{display:block}
-  .intel-bullets{list-style:none;padding:6px 0 0;display:flex;flex-direction:column;gap:4px}
+  .intel-bullets{list-style:none;padding:7px 0 4px;display:flex;flex-direction:column;gap:4px}
   .intel-bullets li{font-size:10px;color:var(--neutral);line-height:1.5;display:flex;gap:5px}
-  .intel-bullets li::before{content:"—";color:var(--muted2);flex-shrink:0}
-  .intel-pips{display:flex;align-items:center;gap:3px;margin-top:6px}
+  .intel-bullets li::before{content:"•";color:var(--muted2);flex-shrink:0}
+  .intel-pips{display:flex;align-items:center;gap:3px;margin-top:5px;padding-top:5px;border-top:1px solid var(--border)}
   .intel-pips-label{font-family:var(--mono);font-size:8px;color:var(--muted);margin-right:2px}
   .pip{width:12px;height:4px;border-radius:1px;background:var(--border2)}
   .pip.p5{background:#f87171}.pip.p4{background:#fb923c}.pip.p3{background:#fbbf24}.pip.p2{background:#4ade80}.pip.p1{background:#585f7a}
@@ -508,28 +506,31 @@ function intelCatLabel(c){return{macro:'macro',onchain:'on-chain',news:'news',se
 function renderIntel(items){
   const feed=document.getElementById('intelFeed');
   if(!items||!items.length){feed.innerHTML='<div class="intel-loading"><p style="color:var(--loss)">No signals — retrying…</p></div>';return}
+  // Already sorted newest-first from server, cap at 12
+  const display = items.slice(0,12);
   feed.innerHTML='';
-  items.forEach((item,idx)=>{
+  display.forEach((item,idx)=>{
     const el=document.createElement('div');
     el.className='intel-item';
     const pips=[1,2,3,4,5].map(i=>`<div class="pip ${i<=item.score?intelPipClass(item.score):''}"></div>`).join('');
-    const bullets=(item.bullets||[]).map(b=>`<li>${b}</li>`).join('');
+    const bullets=(item.bullets||[]).filter(b=>b).map(b=>`<li>${b}</li>`).join('');
+    // Score border colour on left edge
+    const scoreColors={5:'#f87171',4:'#fb923c',3:'#fbbf24',2:'#4ade80',1:'#3d4560'};
+    el.style.borderLeft=`2px solid ${scoreColors[item.score]||'#3d4560'}`;
     el.innerHTML=`
       <div class="intel-item-header" onclick="toggleIntel(${idx})">
-        <div class="score-badge ${intelScoreClass(item.score)}">${item.score}</div>
-        <div class="intel-meta">
-          <div class="intel-tags">
-            <span class="intel-source">${item.source||'—'}</span>
-            <span class="intel-cat ${intelCatClass(item.category)}">${intelCatLabel(item.category)}</span>
-            <span class="intel-time" data-pubdate="${item.pubDate||''}">${clientTimeSince(item.pubDate)}</span>
-          </div>
-          <div class="intel-headline">${item.headline||''}</div>
+        <div class="intel-item-top">
+          <span class="score-badge ${intelScoreClass(item.score)}">${item.score}</span>
+          <span class="intel-source">${item.source||'—'}</span>
+          <span class="intel-cat ${intelCatClass(item.category)}">${intelCatLabel(item.category)}</span>
+          <span class="intel-time" data-pubdate="${item.pubDate||''}">${clientTimeSince(item.pubDate)}</span>
+          <span class="intel-chevron" id="ichev-${idx}">▼</span>
         </div>
-        <span class="intel-chevron" id="ichev-${idx}">▼</span>
+        <div class="intel-headline">${item.headline||''}</div>
       </div>
       <div class="intel-body" id="ibody-${idx}">
         <ul class="intel-bullets">${bullets}</ul>
-        <div class="intel-pips"><span class="intel-pips-label">effect</span>${pips}<span class="intel-pips-label" style="margin-left:4px">${item.score}/5</span></div>
+        <div class="intel-pips"><span class="intel-pips-label">effect score</span>${pips}<span class="intel-pips-label" style="margin-left:4px;color:var(--text)">${item.score}/5</span></div>
       </div>`;
     feed.appendChild(el);
   });
