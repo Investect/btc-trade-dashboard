@@ -114,7 +114,7 @@ app.get('/api/indicators', (req, res) => res.json(latestIndicators || {}));
 // Caches results for 30s to avoid hammering free APIs
 let intelCache = null;
 let intelCacheTime = 0;
-const INTEL_CACHE_MS = 60000; // 60 seconds — RSS feeds don't update faster than this
+const INTEL_CACHE_MS = 30000; // 30s global cache — per-source caches handle the real throttling
 
 // Keyword scoring rules — Claude-style analyst logic in pure JS
 function scoreHeadline(title, source) {
@@ -219,155 +219,192 @@ function decayScore(score, dateStr) {
   return score;
 }
 
-async function fetchRSS(url, sourceName) {
+// ── Per-source caches so fast sources (social) update more often than slow ones (news) ──
+const srcCache = {};
+async function cachedFetch(key, fn, ttlMs) {
+  const now = Date.now();
+  if (srcCache[key] && (now - srcCache[key].t) < ttlMs) return srcCache[key].d;
   try {
-    const r = await fetch(url, { headers: { 'User-Agent': 'BTCScalpJournal/1.0' }, signal: AbortSignal.timeout(5000) });
-    const xml = await r.text();
-    const items = [];
-    const itemMatches = xml.matchAll(/<item>([\s\S]*?)<\/item>/g);
-    for (const m of itemMatches) {
-      const block = m[1];
-      const title   = (block.match(/<title><!\[CDATA\[(.*?)\]\]><\/title>/) || block.match(/<title>(.*?)<\/title>/))?.[1]?.trim() || '';
-      const pubDate = (block.match(/<pubDate>(.*?)<\/pubDate>/))?.[1]?.trim() || '';
-      if (title) items.push({ title, pubDate, source: sourceName });
-      if (items.length >= 8) break;
-    }
-    return items;
-  } catch (e) {
-    console.log(`RSS fetch failed for ${sourceName}:`, e.message);
-    return [];
+    const d = await fn();
+    srcCache[key] = { t: now, d };
+    return d;
+  } catch(e) {
+    console.log(`${key} fetch failed:`, e.message);
+    return srcCache[key]?.d || [];
   }
+}
+
+async function fetchRSS(url, sourceName, limit=8) {
+  const r = await fetch(url, { headers:{'User-Agent':'BTCScalpJournal/1.0'}, signal:AbortSignal.timeout(6000) });
+  const xml = await r.text();
+  const items = [];
+  for (const m of xml.matchAll(/<item>([\s\S]*?)<\/item>/g)) {
+    const b = m[1];
+    const title   = (b.match(/<title><!\[CDATA\[(.*?)\]\]><\/title>/) || b.match(/<title>(.*?)<\/title>/))?.[1]?.trim() || '';
+    const pubDate = (b.match(/<pubDate>(.*?)<\/pubDate>/))?.[1]?.trim() || '';
+    const link    = (b.match(/<link>(.*?)<\/link>/))?.[1]?.trim() || '';
+    if (title) items.push({ title, pubDate, source: sourceName, link });
+    if (items.length >= limit) break;
+  }
+  return items;
 }
 
 async function fetchCryptoPanic() {
-  try {
-    const r = await fetch('https://cryptopanic.com/api/v1/posts/?auth_token=free&currencies=BTC&public=true&kind=news', { signal: AbortSignal.timeout(5000) });
-    const d = await r.json();
-    return (d.results || []).slice(0, 8).map(item => ({
-      title:   item.title,
-      pubDate: item.published_at,
-      source:  item.source?.title || 'CryptoPanic'
-    }));
-  } catch (e) {
-    console.log('CryptoPanic fetch failed:', e.message);
-    return [];
-  }
-}
-
-async function fetchFearGreed() {
-  try {
-    const r = await fetch('https://api.alternative.me/fng/?limit=1', { signal: AbortSignal.timeout(5000) });
-    const d = await r.json();
-    const val   = parseInt(d.data?.[0]?.value || 50);
-    const label = d.data?.[0]?.value_classification || 'Neutral';
-    let score = 2, bullets = [];
-    if      (val <= 15) { score = 5; bullets = ['Extreme Fear — panic selling, contrarian buy signal brewing', 'Capitulation events often mark local bottoms', 'Watch for exhaustion candles and volume spike reversal']; }
-    else if (val <= 30) { score = 4; bullets = ['Fear zone — elevated sell pressure, risk-off sentiment', 'BTC often bounces from fear zones but can still fall further', 'Wait for volume confirmation before longing']; }
-    else if (val >= 85) { score = 5; bullets = ['Extreme Greed — euphoric market, high reversal risk', 'Historically precedes sharp corrections', 'Avoid chasing longs — look for short setups on momentum fade']; }
-    else if (val >= 70) { score = 4; bullets = ['Greed zone — crowd is overextended', 'Momentum may continue short-term but risk is elevated', 'Tighten stops on longs, watch for exhaustion signals']; }
-    else                { score = 2; bullets = ['Neutral sentiment — no extreme crowd positioning', 'Price likely driven by technicals and order flow', 'Less risk of sentiment-driven flash moves']; }
-    return { title: `Fear & Greed Index: ${val} — ${label}`, pubDate: new Date().toISOString(), source: 'Alternative.me', score, bullets, category: 'sentiment', isProcessed: true };
-  } catch (e) {
-    console.log('Fear/Greed fetch failed:', e.message);
-    return null;
-  }
-}
-
-async function fetchBinanceData() {
-  try {
-    const r = await fetch('https://api.binance.com/api/v3/ticker/24hr?symbol=BTCUSDT', { signal: AbortSignal.timeout(5000) });
-    const d = await r.json();
-    const price     = parseFloat(d.lastPrice);
-    const change    = parseFloat(d.priceChangePercent);
-    const volume    = parseFloat(d.quoteVolume) / 1e9; // billions
-    const high      = parseFloat(d.highPrice);
-    const low       = parseFloat(d.lowPrice);
-    const range     = ((high - low) / low * 100).toFixed(2);
-    let score = 2, bullets = [];
-    if      (Math.abs(change) > 5) { score = 4; bullets = [`${change>0?'+':''}${change.toFixed(2)}% 24h move — strong directional momentum active`, `24h range: ${range}% — high volatility environment`, `Volume: $${volume.toFixed(1)}B — ${volume>20?'elevated, expect continuation':'moderate, watch for reversal'}`]; }
-    else if (Math.abs(change) > 3) { score = 3; bullets = [`${change>0?'+':''}${change.toFixed(2)}% 24h — moderate trend in play`, `Price range: $${low.toLocaleString()} – $${high.toLocaleString()}`, `Volume: $${volume.toFixed(1)}B`]; }
-    else                            { score = 2; bullets = [`BTC relatively flat: ${change>0?'+':''}${change.toFixed(2)}% 24h`, `Range: $${low.toLocaleString()} – $${high.toLocaleString()} (${range}%)`, `Volume: $${volume.toFixed(1)}B — normal conditions`]; }
-    return { title: `BTC $${price.toLocaleString()} · ${change>0?'+':''}${change.toFixed(2)}% · Vol $${volume.toFixed(1)}B`, pubDate: new Date().toISOString(), source: 'Binance', score, bullets, category: 'technical', isProcessed: true };
-  } catch (e) {
-    console.log('Binance fetch failed:', e.message);
-    return null;
-  }
+  // news + media + all kinds
+  const [news, social] = await Promise.all([
+    fetch('https://cryptopanic.com/api/v1/posts/?auth_token=free&currencies=BTC&public=true&kind=news', {signal:AbortSignal.timeout(5000)}).then(r=>r.json()).catch(()=>({results:[]})),
+    fetch('https://cryptopanic.com/api/v1/posts/?auth_token=free&currencies=BTC&public=true&kind=media', {signal:AbortSignal.timeout(5000)}).then(r=>r.json()).catch(()=>({results:[]})),
+  ]);
+  return [...(news.results||[]), ...(social.results||[])].slice(0,12).map(item=>({
+    title:   item.title,
+    pubDate: item.published_at,
+    source:  item.source?.title || 'CryptoPanic',
+  }));
 }
 
 async function fetchReddit() {
-  try {
-    // Reddit JSON API — completely free, no auth needed
-    const r = await fetch('https://www.reddit.com/r/Bitcoin+btc+CryptoCurrency/new.json?limit=10&sort=new', {
-      headers: { 'User-Agent': 'BTCScalpJournal/1.0' },
-      signal: AbortSignal.timeout(5000)
-    });
-    const d = await r.json();
-    const posts = (d.data?.children || []).slice(0, 8);
-    return posts.map(p => ({
-      title:   p.data.title,
-      pubDate: new Date(p.data.created_utc * 1000).toISOString(),
-      source:  `Reddit r/${p.data.subreddit}`,
-      upvotes: p.data.ups,
-    }));
-  } catch(e) {
-    console.log('Reddit fetch failed:', e.message);
-    return [];
-  }
+  const subs = ['Bitcoin', 'btc', 'CryptoCurrency', 'BitcoinMarkets', 'CryptoMarkets'];
+  const results = await Promise.all(subs.map(sub =>
+    fetch(`https://www.reddit.com/r/${sub}/new.json?limit=5&sort=new`, {
+      headers:{'User-Agent':'BTCScalpJournal/1.0'}, signal:AbortSignal.timeout(5000)
+    }).then(r=>r.json()).catch(()=>({data:{children:[]}}))
+  ));
+  const posts = results.flatMap(d => (d.data?.children||[]).map(p=>({
+    title:   p.data.title,
+    pubDate: new Date(p.data.created_utc*1000).toISOString(),
+    source:  `Reddit r/${p.data.subreddit}`,
+    upvotes: p.data.ups,
+    comments: p.data.num_comments,
+  })));
+  return posts.sort((a,b)=>new Date(b.pubDate)-new Date(a.pubDate)).slice(0,10);
 }
 
 async function fetchStockTwits() {
+  const r = await fetch('https://api.stocktwits.com/api/2/streams/symbol/BTC.X.json?limit=15', {signal:AbortSignal.timeout(5000)});
+  const d = await r.json();
+  return (d.messages||[]).slice(0,10).map(m=>({
+    title:     (m.body||'').slice(0,140),
+    pubDate:   m.created_at,
+    source:    `StockTwits @${m.user?.username||'user'}`,
+    sentiment: m.entities?.sentiment?.basic||null,
+    followers: m.user?.followers||0,
+  }));
+}
+
+async function fetchNitter() {
+  // Nitter = free public Twitter/X mirror with RSS feeds
+  // Multiple BTC hashtag and account feeds
+  const nitterFeeds = [
+    { url:'https://nitter.net/search/rss?q=%23Bitcoin+%23BTCUSD&f=tweets', label:'Twitter #Bitcoin' },
+    { url:'https://nitter.net/search/rss?q=%24BTC+price&f=tweets',          label:'Twitter $BTC' },
+    { url:'https://nitter.net/search/rss?q=bitcoin+dump+OR+pump+OR+crash',  label:'Twitter BTC sentiment' },
+    { url:'https://nitter.poast.org/search/rss?q=%23Bitcoin',               label:'Twitter #Bitcoin' },
+  ];
+  const results = await Promise.allSettled(
+    nitterFeeds.map(f =>
+      fetch(f.url, { headers:{'User-Agent':'BTCScalpJournal/1.0'}, signal:AbortSignal.timeout(4000) })
+        .then(r=>r.text())
+        .then(xml => {
+          const items = [];
+          for (const m of xml.matchAll(/<item>([\s\S]*?)<\/item>/g)) {
+            const b = m[1];
+            const title   = (b.match(/<title><!\[CDATA\[(.*?)\]\]><\/title>/) || b.match(/<title>(.*?)<\/title>/))?.[1]?.trim()||'';
+            const pubDate = (b.match(/<pubDate>(.*?)<\/pubDate>/))?.[1]?.trim()||'';
+            const creator = (b.match(/<dc:creator><!\[CDATA\[(.*?)\]\]><\/dc:creator>/) || b.match(/<dc:creator>(.*?)<\/dc:creator>/))?.[1]?.trim()||'';
+            if (title && title.length > 10) items.push({ title, pubDate, source:`${f.label} @${creator||'unknown'}` });
+            if (items.length >= 5) break;
+          }
+          return items;
+        })
+    )
+  );
+  return results.flatMap(r => r.status==='fulfilled' ? r.value : []).slice(0,12);
+}
+
+async function fetchWhaleAlert() {
+  // WhaleAlert free RSS feed
   try {
-    // StockTwits public API — free, no auth
-    const r = await fetch('https://api.stocktwits.com/api/2/streams/symbol/BTC.X.json?limit=10', {
-      signal: AbortSignal.timeout(5000)
-    });
-    const d = await r.json();
-    const msgs = (d.messages || []).slice(0, 6);
-    return msgs.map(m => ({
-      title:   m.body?.slice(0, 120) || '',
-      pubDate: m.created_at,
-      source:  `StockTwits @${m.user?.username || 'unknown'}`,
-      sentiment: m.entities?.sentiment?.basic || null,
-    }));
-  } catch(e) {
-    console.log('StockTwits fetch failed:', e.message);
-    return [];
-  }
+    const items = await fetchRSS('https://whale-alert.io/rss', 'Whale Alert 🐋', 8);
+    return items;
+  } catch(e) { return []; }
+}
+
+async function fetchFearGreed() {
+  const r = await fetch('https://api.alternative.me/fng/?limit=1', {signal:AbortSignal.timeout(5000)});
+  const d = await r.json();
+  const val   = parseInt(d.data?.[0]?.value||50);
+  const label = d.data?.[0]?.value_classification||'Neutral';
+  let score=2, bullets=[];
+  if      (val<=15){score=5;bullets=['Extreme Fear — panic selling, capitulation zone','Contrarian buy signal brewing — watch for volume spike reversal','Historically marks local bottoms — high reward risk if confirmed'];}
+  else if (val<=30){score=4;bullets=['Fear zone — elevated sell pressure across crypto','BTC often bounces from fear zones but can extend lower first','Wait for volume confirmation and EMA reclaim before longing'];}
+  else if (val>=85){score=5;bullets=['Extreme Greed — euphoria, crowd is over-leveraged long','Historically precedes sharp corrections — reversal risk very high','Avoid chasing longs — look for short setups on momentum fade'];}
+  else if (val>=70){score=4;bullets=['Greed zone — retail crowd piling in, over-extended','Momentum may continue short-term but risk/reward worsening','Tighten stops on longs, watch for exhaustion candles'];}
+  else             {score=2;bullets=['Neutral sentiment — balanced crowd positioning','Price driven by technicals and order flow, not emotion','Lower risk of sentiment-driven flash moves in either direction'];}
+  return { title:`😨 Fear & Greed: ${val}/100 — ${label}`, pubDate:new Date().toISOString(), source:'Alternative.me', score, bullets, category:'sentiment', isProcessed:true };
+}
+
+async function fetchBinanceData() {
+  const [ticker, klines] = await Promise.all([
+    fetch('https://api.binance.com/api/v3/ticker/24hr?symbol=BTCUSDT',{signal:AbortSignal.timeout(5000)}).then(r=>r.json()),
+    fetch('https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval=1h&limit=2',{signal:AbortSignal.timeout(5000)}).then(r=>r.json()),
+  ]);
+  const price  = parseFloat(ticker.lastPrice);
+  const change = parseFloat(ticker.priceChangePercent);
+  const vol    = parseFloat(ticker.quoteVolume)/1e9;
+  const high   = parseFloat(ticker.highPrice);
+  const low    = parseFloat(ticker.lowPrice);
+  const range  = ((high-low)/low*100).toFixed(2);
+  // Last hour candle analysis
+  const lastH  = klines[0];
+  const hourChange = lastH ? ((parseFloat(lastH[4])-parseFloat(lastH[1]))/parseFloat(lastH[1])*100).toFixed(2) : null;
+  let score=2, bullets=[];
+  if      (Math.abs(change)>5){score=4;bullets=[`${change>0?'+':''}${change.toFixed(2)}% 24h — strong directional momentum`,`24h range: ${range}% — elevated volatility`,`Volume: $${vol.toFixed(1)}B — ${vol>20?'above average, trend likely continues':'moderate'}`,hourChange?`Last 1h candle: ${hourChange>0?'+':''}${hourChange}%`:''];}
+  else if (Math.abs(change)>3){score=3;bullets=[`${change>0?'+':''}${change.toFixed(2)}% 24h — moderate trend`,`Range: $${low.toLocaleString()}–$${high.toLocaleString()}`,`Vol: $${vol.toFixed(1)}B`,hourChange?`Last hour: ${hourChange>0?'+':''}${hourChange}%`:''];}
+  else                         {score=2;bullets=[`BTC flat: ${change>0?'+':''}${change.toFixed(2)}% 24h`,`Range: $${low.toLocaleString()}–$${high.toLocaleString()} (${range}%)`,`Vol: $${vol.toFixed(1)}B — normal`,hourChange?`Last 1h: ${hourChange>0?'+':''}${hourChange}% — ${Math.abs(parseFloat(hourChange))>0.5?'watch for momentum':'quiet hour'}`:''];}
+  bullets = bullets.filter(Boolean);
+  return { title:`📊 BTC $${price.toLocaleString()} · ${change>0?'+':''}${change.toFixed(2)}% · $${vol.toFixed(1)}B vol`, pubDate:new Date().toISOString(), source:'Binance', score, bullets, category:'technical', isProcessed:true };
 }
 
 async function buildIntelFeed() {
-  // Fetch all sources in parallel including social
-  const [cpItems, cointelegraph, coindesk, reddit, stocktwits, fng, binance] = await Promise.all([
-    fetchCryptoPanic(),
-    fetchRSS('https://cointelegraph.com/rss', 'CoinTelegraph'),
-    fetchRSS('https://www.coindesk.com/arc/outboundfeeds/rss/', 'CoinDesk'),
-    fetchReddit(),
-    fetchStockTwits(),
-    fetchFearGreed(),
-    fetchBinanceData(),
+  // Parallel fetch with per-source TTLs
+  // Social = 30s cache, news = 2min, market data = 30s
+  const [cpItems, cointelegraph, coindesk, decrypt, reddit, stocktwits, nitter, whaleAlert, fng, binance] = await Promise.all([
+    cachedFetch('cryptopanic',    fetchCryptoPanic,  60000),
+    cachedFetch('cointelegraph',  ()=>fetchRSS('https://cointelegraph.com/rss','CoinTelegraph',8), 120000),
+    cachedFetch('coindesk',       ()=>fetchRSS('https://www.coindesk.com/arc/outboundfeeds/rss/','CoinDesk',8), 120000),
+    cachedFetch('decrypt',        ()=>fetchRSS('https://decrypt.co/feed','Decrypt',6), 120000),
+    cachedFetch('reddit',         fetchReddit,  30000),
+    cachedFetch('stocktwits',     fetchStockTwits, 30000),
+    cachedFetch('nitter',         fetchNitter,  30000),
+    cachedFetch('whalealert',     fetchWhaleAlert, 60000),
+    cachedFetch('feargreed',      fetchFearGreed, 300000), // 5min — only updates daily
+    cachedFetch('binance',        fetchBinanceData, 30000),
   ]);
 
-  // Process raw RSS/API items through scoring engine
-  const rawItems = [...cpItems, ...cointelegraph, ...coindesk, ...reddit, ...stocktwits];
+  // Process all raw items through scoring engine
+  const rawItems = [...cpItems, ...cointelegraph, ...coindesk, ...decrypt, ...reddit, ...stocktwits, ...nitter, ...whaleAlert];
   const scoredItems = rawItems.map(item => {
     const { score, bullets, category } = scoreHeadline(item.title, item.source);
-    // Boost score for high-upvote Reddit posts
     let finalScore = decayScore(score, item.pubDate);
-    if (item.upvotes && item.upvotes > 500) finalScore = Math.min(5, finalScore + 1);
-    // StockTwits bullish/bearish sentiment
-    if (item.sentiment === 'Bullish') bullets.push('StockTwits crowd: Bullish sentiment on BTC right now');
-    if (item.sentiment === 'Bearish') bullets.push('StockTwits crowd: Bearish sentiment on BTC right now');
+    // Boost high-engagement social posts
+    if (item.upvotes   && item.upvotes   > 500)  finalScore = Math.min(5, finalScore + 1);
+    if (item.followers && item.followers > 10000) finalScore = Math.min(5, finalScore + 1);
+    // Add sentiment bullet for StockTwits
+    if (item.sentiment === 'Bullish') bullets.unshift('📈 StockTwits crowd tagged this: BULLISH');
+    if (item.sentiment === 'Bearish') bullets.unshift('📉 StockTwits crowd tagged this: BEARISH');
+    // Tag source type
+    const isSocial = item.source.match(/Reddit|StockTwits|Twitter|Nitter/i);
     return {
-      headline:  item.title.length > 90 ? item.title.slice(0,87)+'…' : item.title,
-      source:    item.source,
-      category:  item.source.startsWith('Reddit') ? 'sentiment' : item.source.startsWith('StockTwits') ? 'sentiment' : category,
-      score:     finalScore,
-      pubDate:   item.pubDate || new Date().toISOString(),
+      headline: item.title.length > 100 ? item.title.slice(0,97)+'…' : item.title,
+      source:   item.source,
+      category: isSocial ? 'sentiment' : category,
+      score:    Math.max(1, finalScore),
+      pubDate:  item.pubDate || new Date().toISOString(),
       bullets,
     };
   });
 
-  // Add pre-processed special items
+  // Specials (pre-scored market data)
   const specials = [fng, binance].filter(Boolean).map(item => ({
     headline: item.title,
     source:   item.source,
@@ -377,17 +414,21 @@ async function buildIntelFeed() {
     bullets:  item.bullets,
   }));
 
-  // Merge, deduplicate, sort by score then recency, take top 8
-  const all = [...specials, ...scoredItems];
+  // Merge, deduplicate by headline prefix, sort by score then recency, show top 12
+  const all  = [...specials, ...scoredItems];
   const seen = new Set();
   const deduped = all.filter(item => {
-    const key = item.headline.slice(0,40).toLowerCase();
+    const key = item.headline.slice(0,50).toLowerCase().replace(/[^a-z0-9]/g,'');
     if (seen.has(key)) return false;
-    seen.add(key); return true;
+    seen.add(key);
+    return item.headline.length > 5;
   });
 
-  deduped.sort((a, b) => b.score - a.score);
-  return deduped.slice(0, 8);
+  deduped.sort((a, b) => {
+    if (b.score !== a.score) return b.score - a.score;
+    return new Date(b.pubDate) - new Date(a.pubDate);
+  });
+  return deduped.slice(0, 12);
 }
 
 app.get('/api/intel', async (req, res) => {
