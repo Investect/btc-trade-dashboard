@@ -73,52 +73,65 @@
   @keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}
 
   /* ── SESSION CLOCK ── */
-  .session-clock{flex-shrink:0;border-top:1px solid var(--border);background:var(--bg);overflow:hidden;max-height:60vh;display:flex;flex-direction:column}
+  .session-clock{flex:1;border-top:1px solid var(--border);background:var(--bg);overflow:hidden;display:flex;flex-direction:column;min-height:0}
   .session-clock-header{display:flex;align-items:center;justify-content:space-between;padding:6px 10px;background:var(--surface);border-bottom:1px solid var(--border);cursor:pointer;user-select:none;flex-shrink:0}
   .session-clock-title{font-family:var(--mono);font-size:9px;font-weight:700;color:var(--muted);letter-spacing:.08em;text-transform:uppercase}
   .session-clock-toggle{font-size:9px;color:var(--muted2)}
-  .session-clock-body{padding:8px 10px 16px;display:flex;flex-direction:column;gap:8px;overflow-y:scroll;flex:1;-webkit-overflow-scrolling:touch}
+  .session-clock-body{padding:6px 8px;display:flex;flex-direction:column;gap:5px;overflow-y:auto;flex:1;min-height:0}
   .session-clock-body::-webkit-scrollbar{width:3px}
   .session-clock-body::-webkit-scrollbar-thumb{background:var(--border2);border-radius:2px}
-  .sc-current{background:var(--surface);border:1px solid var(--border);border-radius:5px;padding:8px 10px}
-  .sc-session-row{display:flex;align-items:center;justify-content:space-between;margin-bottom:5px}
+
+  /* Hero current session */
+  .sc-current{background:var(--surface);border:1px solid var(--border);border-radius:5px;padding:7px 9px;flex-shrink:0}
+  .sc-session-row{display:flex;align-items:center;justify-content:space-between;margin-bottom:4px}
   .sc-session-name{font-family:var(--mono);font-size:11px;font-weight:700}
-  .sc-session-open{color:var(--win)}.sc-session-closed{color:var(--muted)}
   .sc-status-dot{width:6px;height:6px;border-radius:50%;margin-right:5px;display:inline-block;flex-shrink:0}
   .sc-status-dot.open{background:var(--win);animation:pulse 2s infinite}
   .sc-status-dot.closed{background:var(--muted2)}
-  .sc-times-row{display:grid;grid-template-columns:1fr 1fr;gap:4px;margin-bottom:5px}
-  .sc-time-block{background:var(--bg);border-radius:3px;padding:4px 6px}
-  .sc-time-label{font-size:8px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:1px}
-  .sc-time-val{font-family:var(--mono);font-size:13px;font-weight:700;color:var(--text)}
-  .sc-time-tz{font-size:8px;color:var(--muted);margin-left:2px}
+  .sc-times-row{display:grid;grid-template-columns:1fr 1fr;gap:3px;margin-bottom:4px}
+  .sc-time-block{background:var(--bg);border-radius:3px;padding:3px 5px}
+  .sc-time-label{font-size:7px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:1px}
+  .sc-time-val{font-family:var(--mono);font-size:12px;font-weight:700;color:var(--text)}
   .sc-countdown-row{display:flex;align-items:center;justify-content:space-between}
   .sc-countdown-label{font-size:9px;color:var(--muted)}
   .sc-countdown-val{font-family:var(--mono);font-size:11px;font-weight:700;color:var(--accent)}
-  .sc-sessions-strip{display:flex;flex-direction:column;gap:3px}
-  .sc-session-row-item{display:flex;align-items:center;gap:6px;padding:4px 7px;border-radius:4px;border:1px solid var(--border)}
+
+  /* Sessions strip */
+  .sc-sessions-strip{display:flex;flex-direction:column;gap:2px;flex-shrink:0}
+  .sc-session-row-item{display:flex;align-items:center;gap:5px;padding:3px 6px;border-radius:3px;border:1px solid var(--border)}
   .sc-session-row-item.active{border-color:var(--accent);background:rgba(122,162,247,.06)}
   .sc-session-row-item.overlap{border-color:#cba6f7;background:rgba(203,166,247,.06)}
   .sc-sess-dot{width:5px;height:5px;border-radius:50%;flex-shrink:0}
   .sc-sess-name{font-family:var(--mono);font-size:9px;font-weight:600;flex:1}
   .sc-sess-hrs{font-size:8px;color:var(--muted)}
   .sc-sess-status{font-family:var(--mono);font-size:8px}
-  .sc-volume-row{display:flex;flex-direction:column;gap:3px}
+
+  /* Volume bar */
+  .sc-volume-row{display:flex;flex-direction:column;gap:2px;flex-shrink:0}
   .sc-vol-label{font-size:8px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em}
-  .sc-vol-track{display:flex;height:14px;border-radius:3px;overflow:hidden;border:1px solid var(--border)}
-  .sc-vol-seg{height:100%;position:relative;cursor:default}
-  .sc-vol-seg:hover::after{content:attr(data-tip);position:absolute;bottom:18px;left:50%;transform:translateX(-50%);background:var(--surface2);border:1px solid var(--border2);color:var(--text);font-size:8px;padding:2px 5px;border-radius:3px;white-space:nowrap;z-index:99;font-family:var(--mono)}
-  .sc-risk{display:flex;flex-direction:column;gap:4px}
-  .sc-risk-title{font-size:8px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em}
-  .sc-risk-item{display:flex;align-items:flex-start;gap:6px;padding:4px 7px;border-radius:4px;border-left:2px solid transparent}
-  .sc-risk-item.danger{border-left-color:var(--loss);background:rgba(248,113,113,.05)}
-  .sc-risk-item.caution{border-left-color:#fbbf24;background:rgba(251,191,36,.05)}
-  .sc-risk-item.good{border-left-color:var(--win);background:rgba(74,222,128,.05)}
-  .sc-risk-item.info{border-left-color:var(--accent);background:rgba(122,162,247,.05)}
-  .sc-risk-icon{font-size:10px;flex-shrink:0;margin-top:1px}
-  .sc-risk-text{flex:1}
-  .sc-risk-time{font-family:var(--mono);font-size:9px;font-weight:600;color:var(--text);display:block}
-  .sc-risk-desc{font-size:9px;color:var(--muted);line-height:1.4;margin-top:1px}
+  .sc-vol-track{display:flex;height:10px;border-radius:3px;overflow:hidden;border:1px solid var(--border);position:relative}
+  .sc-vol-seg{height:100%;cursor:default}
+  .sc-vol-seg:hover::after{content:attr(data-tip);position:absolute;bottom:14px;left:50%;transform:translateX(-50%);background:var(--surface2);border:1px solid var(--border2);color:var(--text);font-size:8px;padding:2px 5px;border-radius:3px;white-space:nowrap;z-index:99;font-family:var(--mono)}
+
+  /* Risk cards — compact collapsible */
+  .sc-risk{display:flex;flex-direction:column;gap:3px;flex-shrink:0}
+  .sc-risk-title{font-size:8px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:1px}
+  .sc-risk-card{border-radius:4px;border:1px solid var(--border);overflow:hidden;transition:border-color .15s}
+  .sc-risk-card.danger{border-left:2px solid var(--loss)}
+  .sc-risk-card.caution{border-left:2px solid #fbbf24}
+  .sc-risk-card.good{border-left:2px solid var(--win)}
+  .sc-risk-card.info{border-left:2px solid var(--accent)}
+  .sc-risk-card.active-now{box-shadow:0 0 0 1px currentColor}
+  .sc-risk-card-header{display:flex;align-items:center;gap:5px;padding:4px 7px;cursor:pointer;user-select:none}
+  .sc-risk-card-header:hover{background:rgba(255,255,255,.02)}
+  .sc-risk-icon{font-size:10px;flex-shrink:0}
+  .sc-risk-label{font-family:var(--mono);font-size:9px;font-weight:600;color:var(--text);flex:1}
+  .sc-risk-time-tag{font-family:var(--mono);font-size:8px;color:var(--muted)}
+  .sc-risk-now-badge{font-family:var(--mono);font-size:7px;font-weight:700;padding:1px 4px;border-radius:2px;color:#0b0e14;flex-shrink:0}
+  .sc-risk-chev{font-size:8px;color:var(--muted2);transition:transform .15s;flex-shrink:0}
+  .sc-risk-chev.open{transform:rotate(180deg)}
+  .sc-risk-body{display:none;padding:0 7px 6px 22px;font-size:9px;color:var(--muted);line-height:1.5}
+  .sc-risk-body.open{display:block}
 
   /* ── JOURNAL PANEL ── */
   .journal-panel{flex:1;display:flex;flex-direction:column;overflow:hidden;min-width:0}
@@ -928,41 +941,104 @@ function getNextSession(){
 function getRiskItems(){
   const h   = utcH();
   const m   = utcM();
-  const hm  = h + m/60; // decimal for sub-hour checks
-  const dow = new Date().getUTCDay(); // 0=Sun,1=Mon,...,5=Fri,6=Sat
+  const hm  = h + m/60;
+  const dow = new Date().getUTCDay();
 
-  // Each entry: utcOpen/utcClose in decimal hours (null = day-of-week rule, no hour check)
-  // active: function returning bool for "are we in this window right now"
   const ALL = [
-    // ── GOOD ──
-    { type:'good',   icon:'🔥', label:'London / NY Overlap',   time:'12:00–16:00 UTC', desc:'Peak BTC volume — strongest trends, tightest spreads, best scalp conditions',     active:()=>hm>=12&&hm<16 },
-    { type:'good',   icon:'✅', label:'London Open',            time:'07:00–11:30 UTC', desc:'Good liquidity, directional moves, low spread — strong session for BTC scalping', active:()=>hm>=7&&hm<11.5 },
-    { type:'good',   icon:'✅', label:'US Market Open Burst',   time:'13:30–15:30 UTC', desc:'High momentum window — US equities open, BTC often spikes on news flow',          active:()=>hm>=13.5&&hm<15.5 },
-    { type:'good',   icon:'✅', label:'NY Morning Session',     time:'12:00–17:00 UTC', desc:'Good US volume, trend continuation after London overlap — solid scalp conditions', active:()=>hm>=12&&hm<17 },
-    // ── CAUTION ──
-    { type:'caution',icon:'⚠️', label:'London Lunch Lull',      time:'11:30–13:00 UTC', desc:'Volume drops sharply — choppy price action, false breakouts, avoid momentum trades', active:()=>hm>=11.5&&hm<13 },
-    { type:'caution',icon:'⚠️', label:'NY Afternoon Fade',      time:'17:00–19:00 UTC', desc:'Momentum fades after 17:00 UTC — range contracts, reduce size or stand aside',       active:()=>hm>=17&&hm<19 },
-    { type:'caution',icon:'⚠️', label:'Weekend Approach',       time:'Fri 20:00+ UTC',  desc:'Liquidity drops sharply Friday evening — gaps and slippage increase into weekend',   active:()=>dow===5&&hm>=20 },
-    { type:'caution',icon:'⚠️', label:'Monday Gap Risk',        time:'Mon 00:00–07:00', desc:'Weekend price gaps possible — don\'t assume Friday\'s close is support/resistance',   active:()=>dow===1&&hm<7 },
-    // ── DANGER ──
-    { type:'danger', icon:'🚫', label:'Asian / Off-Hours',      time:'00:00–07:00 UTC', desc:'Choppy BTC, false breakouts, low follow-through — avoid or cut size significantly',  active:()=>hm>=0&&hm<7 },
-    { type:'danger', icon:'🚫', label:'Late NY / Pacific Fade', time:'21:00–00:00 UTC', desc:'Fading volume, widening spreads, reversals common — high risk, consider stopping',   active:()=>hm>=21 },
-    // ── INFO ──
-    { type:'info',   icon:'📅', label:'Best Trend Days',        time:'Tue – Thu',       desc:'Historically strongest BTC intraday trend days — highest probability setups',        active:()=>dow>=2&&dow<=4 },
-    { type:'info',   icon:'📅', label:'Low Probability Days',   time:'Mon / Fri',       desc:'Monday gaps + Friday liquidity drain — reduce targets, tighter risk management',     active:()=>dow===1||dow===5 },
+    {
+      type:'good', icon:'🔥', label:'London / NY Overlap', time:'12:00–16:00 UTC',
+      desc:'Peak BTC volume window. Strongest trends, tightest spreads, highest probability scalps.',
+      bullets:['Highest liquidity of the 24h cycle — spreads at their tightest','Strong directional moves with real follow-through — avoid fading trends','Both institutional and retail traders active simultaneously','Best time for breakout trades and EMA momentum scalps','Volume confirms moves — false breakouts are rarer here','News from US market open (13:30 UTC) can spike BTC sharply'],
+      active:()=>hm>=12&&hm<16
+    },
+    {
+      type:'good', icon:'✅', label:'London Open', time:'07:00–11:30 UTC',
+      desc:'European session opens — good BTC liquidity and directional bias.',
+      bullets:['European institutions enter — volume ramps up sharply from 07:00','BTC often picks a direction early and trends through the morning','EMA stacks tend to align cleanly — good for trend-following entries','Watch for a retest of Asian session highs/lows as first move','Spread tightens significantly vs overnight — execution improves','Avoid the 11:30 transition into London lunch — volume drops fast'],
+      active:()=>hm>=7&&hm<11.5
+    },
+    {
+      type:'good', icon:'✅', label:'US Market Open Burst', time:'13:30–15:30 UTC',
+      desc:'US equities open — BTC often spikes sharply on correlated risk moves.',
+      bullets:['US stock market opens at 13:30 UTC — BTC reacts to risk sentiment','Momentum often accelerates or reverses sharply in first 30 minutes','Major US economic data releases cluster around this window','Watch for correlated moves: S&P500 up = BTC up (risk-on)','High volume on first candles — scalp with-trend, not against','First 15 minutes can be a trap — wait for direction to confirm'],
+      active:()=>hm>=13.5&&hm<15.5
+    },
+    {
+      type:'good', icon:'✅', label:'NY Morning Session', time:'12:00–17:00 UTC',
+      desc:'US session active — solid conditions after London overlap.',
+      bullets:['Continuation of London/NY overlap momentum into NY afternoon','Good volume and trend persistence through to ~17:00 UTC','Institutional order flow from US funds active','BTC follows macro risk sentiment — monitor equities','Scalp in trend direction — countertrend risk is elevated','Volume begins declining after 16:00 as London desks close'],
+      active:()=>hm>=12&&hm<17
+    },
+    {
+      type:'caution', icon:'⚠️', label:'London Lunch Lull', time:'11:30–13:00 UTC',
+      desc:'Volume drops sharply as London traders step away. High false-breakout risk.',
+      bullets:['Spreads widen as volume drops — execution quality falls','Price often chops sideways with no real direction','Breakouts during this window frequently fail and reverse','EMA signals less reliable — mixed alignment common','Avoid opening new positions unless very clear setup','Wait for NY open at 12:00 to restore volume and direction','If in a trade, tighten your stop — false moves are common'],
+      active:()=>hm>=11.5&&hm<13
+    },
+    {
+      type:'caution', icon:'⚠️', label:'NY Afternoon Fade', time:'17:00–21:00 UTC',
+      desc:'Volume fades as NY traders wind down. Momentum stalls.',
+      bullets:['Volume drops progressively from 17:00 as US desks close','Trend moves lose steam — price often reverts to mean','Avoid holding positions into late NY — reversals common','Spreads start widening — cost of trading increases','BTC can drift aimlessly in a range for hours','High risk of late NY stop hunts on thin liquidity','Better to reduce size significantly or stop trading by 19:00'],
+      active:()=>hm>=17&&hm<21
+    },
+    {
+      type:'caution', icon:'⚠️', label:'Weekend Approach', time:'Fri 20:00+ UTC',
+      desc:'Friday evening liquidity drain. Gaps and slippage risk into weekend.',
+      bullets:['Market makers pull liquidity ahead of weekend — spreads spike','Any news over weekend will gap price on Monday open','Avoid carrying overnight positions into weekend','Thin order book means small trades move price disproportionately','Stop losses may gap through — actual fill worse than set price','BTC historically more volatile Sunday night into Monday open','If trading Friday evening: very small size, very tight stops'],
+      active:()=>dow===5&&hm>=20
+    },
+    {
+      type:'caution', icon:'⚠️', label:'Monday Gap Risk', time:'Mon 00:00–07:00 UTC',
+      desc:'Weekend gap risk — price may open far from Friday close.',
+      bullets:["Weekend news can move BTC significantly with no trading recourse","Don't assume Friday's support/resistance levels still hold","Check BTC price vs Friday close before placing any trade","Volume is low — gaps can extend before filling","Asian session Mon morning often continues gap direction","Wait for London open (07:00) for reliable price discovery","First hour of Mon London open often volatile and fast"],
+      active:()=>dow===1&&hm<7
+    },
+    {
+      type:'danger', icon:'🚫', label:'Asian / Off-Hours', time:'00:00–07:00 UTC',
+      desc:'Very low BTC activity. False breakouts, choppy price, poor follow-through.',
+      bullets:['Volume at 10–30% of peak — moves lack institutional backing','Price easily manipulated on thin order book — stop hunts common','EMA crossovers frequently false — momentum does not follow through','Wide spreads — cost of trading significantly higher','Breakouts often reverse within minutes — no real buyers/sellers','RSI extremes common but do not resolve as expected','If you must trade: minimum size, maximum caution, very tight stops','Best strategy: wait for London open at 07:00 UTC'],
+      active:()=>hm>=0&&hm<7
+    },
+    {
+      type:'danger', icon:'🚫', label:'Late NY / Pacific Fade', time:'21:00–00:00 UTC',
+      desc:'All major sessions closed. Worst liquidity of the day.',
+      bullets:['Sydney opens at 21:00 but BTC volume remains very low','Widest spreads of the 24h cycle — slippage on every trade','Price can move 0.5% on tiny order flow','Trend moves almost never sustained — immediate reversals','High risk of being trapped in a range with no exit momentum','Whales can manipulate price easily in thin conditions','Stop losses frequently triggered by noise, not real moves','Strongly recommended: do not scalp in this window'],
+      active:()=>hm>=21
+    },
+    {
+      type:'info', icon:'📅', label:'Best Trend Days', time:'Tue – Thu',
+      desc:'Historically strongest BTC intraday trend days.',
+      bullets:['Tuesday through Thursday show strongest intraday trends historically','Institutional order flow is most active mid-week','Trend days more likely — EMA momentum strategies perform better','Higher probability of clean breakouts with follow-through','Win rates statistically higher for trend-following strategies','Ideal days for full-size positions with clear setups'],
+      active:()=>dow>=2&&dow<=4
+    },
+    {
+      type:'info', icon:'📅', label:'Low Probability Days', time:'Mon / Fri',
+      desc:'Gap risk Monday, liquidity drain Friday — adjust your approach.',
+      bullets:['Monday: weekend gap risk, uncertain opening direction','Friday: liquidity dries up from ~17:00 UTC — avoid late trading','Both days have historically lower trend persistence','Reduce position size on Mondays until direction confirmed','Friday afternoon: close trades early, do not hold into weekend','Reversal days more common on Mon/Fri than mid-week'],
+      active:()=>dow===1||dow===5
+    },
   ];
 
-  // Sort: active items float to top, otherwise keep order
-  const active  = ALL.filter(r=>r.active());
-  const inactive= ALL.filter(r=>!r.active());
+  const active   = ALL.filter(r=>r.active());
+  const inactive = ALL.filter(r=>!r.active());
   return [...active, ...inactive];
 }
 
 let scVisible = true;
+const riskOpenState = {}; // persists across re-renders
 function toggleSessionClock(){
   scVisible=!scVisible;
   document.getElementById('scBody').style.display=scVisible?'':'none';
   document.getElementById('scToggle').textContent=scVisible?'▲':'▼';
+}
+function toggleRiskCard(idx){
+  const body=document.getElementById('rbody-'+idx);
+  const chev=document.getElementById('rchev-'+idx);
+  if(!body||!chev) return;
+  const open=body.classList.toggle('open');
+  chev.classList.toggle('open',open);
+  chev.textContent=open?'▲':'▼';
+  riskOpenState[idx]=open; // remember for next render
 }
 
 function buildVolTrack(){
@@ -1062,27 +1138,33 @@ function renderSessionClock(){
       </div>`).join('');
   }
 
-  // Risk items
+  // Risk cards — sticky collapsible with bullets
   const riskEl = document.getElementById('scRisk');
   if(riskEl){
-    const items=getRiskItems();
-    riskEl.innerHTML=items.map(it=>{
-      const isNow = it.active();
-      const nowBadge = isNow
-        ? `<span style="font-family:var(--mono);font-size:7px;font-weight:700;background:${
-            it.type==='good'?'var(--win)':it.type==='danger'?'var(--loss)':it.type==='caution'?'#fbbf24':'var(--accent)'
-          };color:#0b0e14;padding:1px 5px;border-radius:2px;margin-left:5px;vertical-align:middle">▶ NOW</span>`
-        : '';
-      const activeStyle = isNow
-        ? `box-shadow:0 0 0 1px ${
-            it.type==='good'?'var(--win)':it.type==='danger'?'var(--loss)':it.type==='caution'?'#fbbf24':'var(--accent)'
-          };opacity:1;`
-        : 'opacity:0.6;';
-      return `<div class="sc-risk-item ${it.type}" style="${activeStyle}">
-        <span class="sc-risk-icon">${it.icon}</span>
-        <div class="sc-risk-text">
-          <span class="sc-risk-time">${it.label}${nowBadge}<span style="font-family:var(--mono);font-size:8px;color:var(--muted);font-weight:400;margin-left:6px">${it.time}</span></span>
-          <span class="sc-risk-desc">${it.desc}</span>
+    const items = getRiskItems();
+    const typeColor = {good:'var(--win)',danger:'var(--loss)',caution:'#fbbf24',info:'var(--accent)'};
+    // Preserve open states across re-renders using persistent state map
+    items.forEach((_,idx)=>{
+      if(riskOpenState[idx]===undefined) riskOpenState[idx] = items[idx].active();
+    });
+    riskEl.innerHTML = items.map((it,idx) => {
+      const isNow   = it.active();
+      const isOpen  = riskOpenState[idx] !== undefined ? riskOpenState[idx] : isNow;
+      const nowBadge = isNow ? `<span class="sc-risk-now-badge" style="background:${typeColor[it.type]}">▶NOW</span>` : '';
+      const bgStyle  = isNow ? `background:${it.type==='good'?'rgba(74,222,128,.05)':it.type==='danger'?'rgba(248,113,113,.05)':it.type==='caution'?'rgba(251,191,36,.05)':'rgba(122,162,247,.05)'};` : '';
+      const borderStyle = isNow ? `border-color:${typeColor[it.type]};` : '';
+      const bullets = (it.bullets||[]).map(b=>`<div style="display:flex;gap:5px;margin-bottom:3px"><span style="color:var(--muted2);flex-shrink:0">•</span><span>${b}</span></div>`).join('');
+      return `<div class="sc-risk-card ${it.type}" style="${bgStyle}${borderStyle}">
+        <div class="sc-risk-card-header" onclick="toggleRiskCard(${idx})">
+          <span class="sc-risk-icon">${it.icon}</span>
+          <span class="sc-risk-label">${it.label}</span>
+          ${nowBadge}
+          <span class="sc-risk-time-tag">${it.time}</span>
+          <span class="sc-risk-chev ${isOpen?'open':''}" id="rchev-${idx}">${isOpen?'▲':'▼'}</span>
+        </div>
+        <div class="sc-risk-body ${isOpen?'open':''}" id="rbody-${idx}">
+          <div style="margin-bottom:5px;color:var(--neutral);font-size:9px">${it.desc}</div>
+          ${bullets}
         </div>
       </div>`;
     }).join('');
