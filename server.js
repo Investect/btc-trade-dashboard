@@ -294,27 +294,75 @@ async function fetchBinanceData() {
   }
 }
 
+async function fetchReddit() {
+  try {
+    // Reddit JSON API — completely free, no auth needed
+    const r = await fetch('https://www.reddit.com/r/Bitcoin+btc+CryptoCurrency/new.json?limit=10&sort=new', {
+      headers: { 'User-Agent': 'BTCScalpJournal/1.0' },
+      signal: AbortSignal.timeout(5000)
+    });
+    const d = await r.json();
+    const posts = (d.data?.children || []).slice(0, 8);
+    return posts.map(p => ({
+      title:   p.data.title,
+      pubDate: new Date(p.data.created_utc * 1000).toISOString(),
+      source:  `Reddit r/${p.data.subreddit}`,
+      upvotes: p.data.ups,
+    }));
+  } catch(e) {
+    console.log('Reddit fetch failed:', e.message);
+    return [];
+  }
+}
+
+async function fetchStockTwits() {
+  try {
+    // StockTwits public API — free, no auth
+    const r = await fetch('https://api.stocktwits.com/api/2/streams/symbol/BTC.X.json?limit=10', {
+      signal: AbortSignal.timeout(5000)
+    });
+    const d = await r.json();
+    const msgs = (d.messages || []).slice(0, 6);
+    return msgs.map(m => ({
+      title:   m.body?.slice(0, 120) || '',
+      pubDate: m.created_at,
+      source:  `StockTwits @${m.user?.username || 'unknown'}`,
+      sentiment: m.entities?.sentiment?.basic || null,
+    }));
+  } catch(e) {
+    console.log('StockTwits fetch failed:', e.message);
+    return [];
+  }
+}
+
 async function buildIntelFeed() {
-  // Fetch all sources in parallel
-  const [cpItems, cointelegraph, coindesk, fng, binance] = await Promise.all([
+  // Fetch all sources in parallel including social
+  const [cpItems, cointelegraph, coindesk, reddit, stocktwits, fng, binance] = await Promise.all([
     fetchCryptoPanic(),
     fetchRSS('https://cointelegraph.com/rss', 'CoinTelegraph'),
     fetchRSS('https://www.coindesk.com/arc/outboundfeeds/rss/', 'CoinDesk'),
+    fetchReddit(),
+    fetchStockTwits(),
     fetchFearGreed(),
     fetchBinanceData(),
   ]);
 
   // Process raw RSS/API items through scoring engine
-  const rawItems = [...cpItems, ...cointelegraph, ...coindesk];
+  const rawItems = [...cpItems, ...cointelegraph, ...coindesk, ...reddit, ...stocktwits];
   const scoredItems = rawItems.map(item => {
     const { score, bullets, category } = scoreHeadline(item.title, item.source);
-    const finalScore = decayScore(score, item.pubDate);
+    // Boost score for high-upvote Reddit posts
+    let finalScore = decayScore(score, item.pubDate);
+    if (item.upvotes && item.upvotes > 500) finalScore = Math.min(5, finalScore + 1);
+    // StockTwits bullish/bearish sentiment
+    if (item.sentiment === 'Bullish') bullets.push('StockTwits crowd: Bullish sentiment on BTC right now');
+    if (item.sentiment === 'Bearish') bullets.push('StockTwits crowd: Bearish sentiment on BTC right now');
     return {
-      headline:  item.title.length > 80 ? item.title.slice(0,77)+'…' : item.title,
+      headline:  item.title.length > 90 ? item.title.slice(0,87)+'…' : item.title,
       source:    item.source,
-      category,
+      category:  item.source.startsWith('Reddit') ? 'sentiment' : item.source.startsWith('StockTwits') ? 'sentiment' : category,
       score:     finalScore,
-      pubDate:   item.pubDate || new Date().toISOString(), // raw timestamp for live client timer
+      pubDate:   item.pubDate || new Date().toISOString(),
       bullets,
     };
   });
@@ -344,17 +392,17 @@ async function buildIntelFeed() {
 
 app.get('/api/intel', async (req, res) => {
   try {
-    const now = Date.now();
-    if (intelCache && (now - intelCacheTime) < INTEL_CACHE_MS) {
+    const now   = Date.now();
+    const force = req.query.fresh === '1';
+    if (!force && intelCache && (now - intelCacheTime) < INTEL_CACHE_MS) {
       return res.json({ ok: true, items: intelCache, cached: true });
     }
-    const items = await buildIntelFeed();
+    const items    = await buildIntelFeed();
     intelCache     = items;
     intelCacheTime = now;
-    res.json({ ok: true, items });
+    res.json({ ok: true, items, cached: false });
   } catch (err) {
     console.error('Intel error:', err.message);
-    // Return cache if available even if stale
     if (intelCache) return res.json({ ok: true, items: intelCache, cached: true });
     res.status(500).json({ ok: false, error: err.message });
   }
