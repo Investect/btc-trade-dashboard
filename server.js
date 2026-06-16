@@ -414,20 +414,32 @@ async function buildIntelFeed() {
     bullets:  item.bullets,
   }));
 
-  // Merge, deduplicate by headline prefix, sort by score then recency, show top 12
   const all  = [...specials, ...scoredItems];
+
+  // Filter out junk — too short, pure spam, no BTC relevance
+  const filtered = all.filter(item => {
+    const h = item.headline.toLowerCase();
+    if (item.headline.length < 15) return false; // too short
+    if (/spell|abracadabra|squids|holy mace/i.test(h)) return false; // obvious spam
+    if (item.source.includes('StockTwits') && item.score < 2) return false; // low-quality social noise
+    return true;
+  });
+
+  // Deduplicate by headline prefix
   const seen = new Set();
-  const deduped = all.filter(item => {
+  const deduped = filtered.filter(item => {
     const key = item.headline.slice(0,50).toLowerCase().replace(/[^a-z0-9]/g,'');
     if (seen.has(key)) return false;
     seen.add(key);
-    return item.headline.length > 5;
+    return true;
   });
 
   deduped.sort((a, b) => {
-    if (b.score !== a.score) return b.score - a.score;
+    // Newest first — primary sort by pubDate
     return new Date(b.pubDate) - new Date(a.pubDate);
   });
+
+  // Only keep top 12 newest, remove anything beyond that
   return deduped.slice(0, 12);
 }
 
