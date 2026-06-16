@@ -1,1104 +1,315 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>BTC Scalp Journal</title>
-<style>
-  @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Inter:wght@400;500;600;700&display=swap');
-  *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
-  :root{
-    --bg:#0b0e14;--surface:#111520;--surface2:#161b2e;
-    --border:#1e2535;--border2:#252d40;
-    --text:#cdd6f4;--muted:#585f7a;--muted2:#3d4560;
-    --win:#4ade80;--loss:#f87171;--neutral:#7c8db0;
-    --accent:#7aa2f7;--long:#4ade80;--short:#f87171;
-    --note:#f9e2af;
-    --mono:'JetBrains Mono',monospace;--sans:'Inter',sans-serif;
+const express = require('express');
+const cors    = require('cors');
+const fs      = require('fs');
+const path    = require('path');
+
+const app  = express();
+const PORT = process.env.PORT || 3000;
+const DB   = process.env.DB_PATH || path.join(__dirname, 'trades.json');
+
+// ─── SIMPLE JSON FILE DATABASE ───────────────────────────────────────────────
+function readDb() {
+  try {
+    if (fs.existsSync(DB)) return JSON.parse(fs.readFileSync(DB, 'utf8'));
+  } catch {}
+  return { trades: [], executions: [], nextId: 1 };
+}
+
+function writeDb(data) {
+  fs.writeFileSync(DB, JSON.stringify(data, null, 2));
+}
+
+if (!fs.existsSync(DB)) writeDb({ trades: [], executions: [], nextId: 1 });
+
+// ─── MIDDLEWARE ──────────────────────────────────────────────────────────────
+app.use(cors());
+app.use(express.json());
+app.use(express.text({ type: 'text/*' }));
+app.use(express.static(path.join(__dirname, 'public')));
+
+// ─── WEBHOOK ─────────────────────────────────────────────────────────────────
+app.post('/webhook', (req, res) => {
+  try {
+    let payload = req.body;
+    if (typeof payload === 'string') {
+      try { payload = JSON.parse(payload); }
+      catch { return res.status(400).json({ error: 'Invalid JSON body' }); }
+    }
+
+    const { action, price, size = 1.0, ppp = 1.0, symbol = 'BTCUSD' } = payload;
+    if (!action || price == null) return res.status(400).json({ error: 'Missing required: action, price' });
+
+    const act = action.toLowerCase().trim();
+    if (!['buy','sell'].includes(act)) return res.status(400).json({ error: 'action must be "buy" or "sell"' });
+
+    const now = Date.now();
+    const db  = readDb();
+
+    db.executions.push({ id: db.nextId++, action: act, price: +price, size: +size, ppp: +ppp, symbol, ts: now });
+
+    const openIdx = db.trades.findIndex(t => t.status === 'open');
+    const open    = openIdx >= 0 ? db.trades[openIdx] : null;
+
+    if (!open) {
+      db.trades.push({ id: db.nextId++, direction: act === 'buy' ? 'Long' : 'Short', entry_price: +price, entry_time: now, exit_price: null, exit_time: null, size: +size, ppp: +ppp, points: null, pnl: null, status: 'open' });
+      console.log(`Opened ${act === 'buy' ? 'Long' : 'Short'} @ ${price}`);
+    } else {
+      const closingLong  = open.direction === 'Long'  && act === 'sell';
+      const closingShort = open.direction === 'Short' && act === 'buy';
+      if (closingLong || closingShort) {
+        const pts    = open.direction === 'Long' ? +price - open.entry_price : open.entry_price - +price;
+        const pnlVal = pts * open.ppp * open.size;
+        db.trades[openIdx] = { ...open, exit_price: +price, exit_time: now, points: pts, pnl: pnlVal, status: 'closed' };
+        console.log(`Closed ${open.direction} @ ${price} | pts: ${pts.toFixed(2)} | pnl: $${pnlVal.toFixed(2)}`);
+      } else {
+        db.trades.push({ id: db.nextId++, direction: act === 'buy' ? 'Long' : 'Short', entry_price: +price, entry_time: now, exit_price: null, exit_time: null, size: +size, ppp: +ppp, points: null, pnl: null, status: 'open' });
+      }
+    }
+
+    writeDb(db);
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('Webhook error:', err);
+    res.status(500).json({ error: err.message });
   }
-  html,body{background:var(--bg);color:var(--text);font-family:var(--sans);font-size:12px;height:100%;overflow:hidden}
+});
 
-  /* ── ROOT SPLIT LAYOUT ── */
-  .root-split{display:flex;height:100vh;overflow:hidden}
+// ─── GET TRADES ──────────────────────────────────────────────────────────────
+app.get('/api/trades', (req, res) => {
+  const db      = readDb();
+  const getAll  = req.query.all === '1';
+  const allClosed = db.trades.filter(t => t.status === 'closed').sort((a, b) => b.exit_time - a.exit_time);
+  const closed  = getAll ? allClosed : allClosed.slice(0, 8);
+  const open    = db.trades.find(t => t.status === 'open') || null;
+  const last8   = allClosed.slice(0, 8);
+  const wins    = last8.filter(t => t.pnl > 0).length;
+  const losses  = last8.filter(t => t.pnl < 0).length;
+  const net     = last8.reduce((s, t) => s + (t.pnl || 0), 0);
+  const pnls    = last8.map(t => t.pnl).filter(v => v != null);
+  const stats   = { total: last8.length, wins, losses, net_pnl: net, avg_pnl: pnls.length ? net / pnls.length : 0, best: pnls.length ? Math.max(...pnls) : 0, worst: pnls.length ? Math.min(...pnls) : 0 };
+  res.json({ closed, open, stats });
+});
 
-  /* ── INTEL PANEL ── */
-  .intel-panel{width:320px;min-width:280px;max-width:340px;flex-shrink:0;display:flex;flex-direction:column;border-right:1px solid var(--border);background:var(--bg);overflow:hidden}
-  .intel-header{display:flex;align-items:center;justify-content:space-between;padding:8px 10px;background:var(--surface);border-bottom:1px solid var(--border);flex-shrink:0}
-  .intel-title{font-family:var(--mono);font-size:10px;font-weight:700;color:var(--accent);letter-spacing:.08em;display:flex;align-items:center;gap:6px}
-  .intel-pulse{width:5px;height:5px;border-radius:50%;background:var(--win);animation:pulse 2s infinite;flex-shrink:0}
-  .intel-refresh-label{font-family:var(--mono);font-size:9px;color:var(--muted)}
-  .intel-timer-bar{height:2px;background:var(--border);flex-shrink:0}
-  .intel-timer-fill{height:100%;background:var(--win);transition:width 1s linear}
-  .intel-feed{flex:1;overflow-y:auto;padding:6px;display:flex;flex-direction:column;gap:5px;min-height:120px}
-  .intel-feed::-webkit-scrollbar{width:3px}
-  .intel-feed::-webkit-scrollbar-thumb{background:var(--border2);border-radius:2px}
+// ─── MANUAL TRADE ────────────────────────────────────────────────────────────
+app.post('/api/trade', (req, res) => {
+  const { direction, entry_price, exit_price, entry_time, exit_time, size = 1, ppp = 1 } = req.body;
+  if (!direction || !entry_price || !exit_price) return res.status(400).json({ error: 'direction, entry_price, exit_price required' });
+  const pts = direction === 'Long' ? +exit_price - +entry_price : +entry_price - +exit_price;
+  const pnl = pts * +ppp * +size;
+  const now = Date.now();
+  const db  = readDb();
+  db.trades.push({ id: db.nextId++, direction, entry_price: +entry_price, entry_time: entry_time || now - 60000, exit_price: +exit_price, exit_time: exit_time || now, size: +size, ppp: +ppp, points: pts, pnl, status: 'closed' });
+  writeDb(db);
+  res.json({ ok: true });
+});
 
-  /* Feed items */
-  .intel-item{background:var(--surface);border:1px solid var(--border);border-radius:5px;overflow:hidden}
-  .intel-item-header{padding:7px 9px;cursor:pointer;display:flex;align-items:flex-start;gap:7px}
-  .intel-item-header:hover{background:rgba(255,255,255,.02)}
-  .score-badge{flex-shrink:0;width:22px;height:22px;border-radius:4px;display:flex;align-items:center;justify-content:center;font-family:var(--mono);font-size:11px;font-weight:700;margin-top:1px}
-  .s5{background:rgba(248,113,113,.15);color:#f87171;border:1px solid rgba(248,113,113,.3)}
-  .s4{background:rgba(251,146,60,.15);color:#fb923c;border:1px solid rgba(251,146,60,.3)}
-  .s3{background:rgba(250,204,21,.15);color:#fbbf24;border:1px solid rgba(250,204,21,.3)}
-  .s2{background:rgba(74,222,128,.15);color:#4ade80;border:1px solid rgba(74,222,128,.3)}
-  .s1{background:rgba(88,95,122,.15);color:#585f7a;border:1px solid rgba(88,95,122,.3)}
-  .intel-meta{flex:1;min-width:0}
-  .intel-tags{display:flex;align-items:center;gap:4px;margin-bottom:3px;flex-wrap:wrap}
-  .intel-source{font-family:var(--mono);font-size:8px;color:var(--muted);background:var(--border);padding:1px 5px;border-radius:2px;white-space:nowrap}
-  .intel-cat{font-size:8px;padding:1px 5px;border-radius:2px;white-space:nowrap}
-  .cat-macro{background:rgba(122,162,247,.15);color:#7aa2f7}
-  .cat-onchain{background:rgba(74,222,128,.12);color:#4ade80}
-  .cat-news{background:rgba(122,162,247,.1);color:#89b4fa}
-  .cat-sentiment{background:rgba(203,166,247,.15);color:#cba6f7}
-  .cat-technical{background:rgba(251,146,60,.12);color:#fb923c}
-  .cat-flow{background:rgba(249,226,175,.1);color:#f9e2af}
-  .intel-time{font-family:var(--mono);font-size:8px;color:var(--muted2)}
-  .intel-headline{font-size:10px;font-weight:500;color:var(--text);line-height:1.4}
-  .intel-chevron{flex-shrink:0;font-size:10px;color:var(--muted);margin-top:4px;transition:transform .2s}
-  .intel-chevron.open{transform:rotate(180deg)}
-  .intel-body{display:none;padding:0 9px 8px 38px;border-top:1px solid var(--border)}
-  .intel-body.open{display:block}
-  .intel-bullets{list-style:none;padding:6px 0 0;display:flex;flex-direction:column;gap:4px}
-  .intel-bullets li{font-size:10px;color:var(--neutral);line-height:1.5;display:flex;gap:5px}
-  .intel-bullets li::before{content:"—";color:var(--muted2);flex-shrink:0}
-  .intel-pips{display:flex;align-items:center;gap:3px;margin-top:6px}
-  .intel-pips-label{font-family:var(--mono);font-size:8px;color:var(--muted);margin-right:2px}
-  .pip{width:12px;height:4px;border-radius:1px;background:var(--border2)}
-  .pip.p5{background:#f87171}.pip.p4{background:#fb923c}.pip.p3{background:#fbbf24}.pip.p2{background:#4ade80}.pip.p1{background:#585f7a}
-  .intel-loading{padding:20px 10px;text-align:center}
-  .intel-loading p{font-family:var(--mono);font-size:9px;color:var(--muted);margin-top:8px}
-  .mini-spinner{width:16px;height:16px;border:2px solid var(--border2);border-top-color:var(--accent);border-radius:50%;animation:spin .8s linear infinite;margin:0 auto}
-  @keyframes spin{to{transform:rotate(360deg)}}
-  @keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}
+// ─── EDIT TRADE ──────────────────────────────────────────────────────────────
+app.patch('/api/trade/:id', (req, res) => {
+  const id  = parseInt(req.params.id);
+  const db  = readDb();
+  const idx = db.trades.findIndex(t => t.id === id);
+  if (idx === -1) return res.status(404).json({ error: 'Trade not found' });
 
-  /* ── SESSION CLOCK ── */
-  .session-clock{flex-shrink:0;border-top:1px solid var(--border);background:var(--bg);overflow:hidden;max-height:55vh;display:flex;flex-direction:column}
-  .session-clock-header{display:flex;align-items:center;justify-content:space-between;padding:6px 10px;background:var(--surface);border-bottom:1px solid var(--border);cursor:pointer;user-select:none;flex-shrink:0}
-  .session-clock-title{font-family:var(--mono);font-size:9px;font-weight:700;color:var(--muted);letter-spacing:.08em;text-transform:uppercase}
-  .session-clock-toggle{font-size:9px;color:var(--muted2)}
-  .session-clock-body{padding:8px 10px;display:flex;flex-direction:column;gap:8px;overflow-y:auto;flex:1}
-  .session-clock-body::-webkit-scrollbar{width:3px}
-  .session-clock-body::-webkit-scrollbar-thumb{background:var(--border2);border-radius:2px}
-  .sc-current{background:var(--surface);border:1px solid var(--border);border-radius:5px;padding:8px 10px}
-  .sc-session-row{display:flex;align-items:center;justify-content:space-between;margin-bottom:5px}
-  .sc-session-name{font-family:var(--mono);font-size:11px;font-weight:700}
-  .sc-session-open{color:var(--win)}.sc-session-closed{color:var(--muted)}
-  .sc-status-dot{width:6px;height:6px;border-radius:50%;margin-right:5px;display:inline-block;flex-shrink:0}
-  .sc-status-dot.open{background:var(--win);animation:pulse 2s infinite}
-  .sc-status-dot.closed{background:var(--muted2)}
-  .sc-times-row{display:grid;grid-template-columns:1fr 1fr;gap:4px;margin-bottom:5px}
-  .sc-time-block{background:var(--bg);border-radius:3px;padding:4px 6px}
-  .sc-time-label{font-size:8px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:1px}
-  .sc-time-val{font-family:var(--mono);font-size:13px;font-weight:700;color:var(--text)}
-  .sc-time-tz{font-size:8px;color:var(--muted);margin-left:2px}
-  .sc-countdown-row{display:flex;align-items:center;justify-content:space-between}
-  .sc-countdown-label{font-size:9px;color:var(--muted)}
-  .sc-countdown-val{font-family:var(--mono);font-size:11px;font-weight:700;color:var(--accent)}
-  .sc-sessions-strip{display:flex;flex-direction:column;gap:3px}
-  .sc-session-row-item{display:flex;align-items:center;gap:6px;padding:4px 7px;border-radius:4px;border:1px solid var(--border)}
-  .sc-session-row-item.active{border-color:var(--accent);background:rgba(122,162,247,.06)}
-  .sc-session-row-item.overlap{border-color:#cba6f7;background:rgba(203,166,247,.06)}
-  .sc-sess-dot{width:5px;height:5px;border-radius:50%;flex-shrink:0}
-  .sc-sess-name{font-family:var(--mono);font-size:9px;font-weight:600;flex:1}
-  .sc-sess-hrs{font-size:8px;color:var(--muted)}
-  .sc-sess-status{font-family:var(--mono);font-size:8px}
-  .sc-volume-row{display:flex;flex-direction:column;gap:3px}
-  .sc-vol-label{font-size:8px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em}
-  .sc-vol-track{display:flex;height:14px;border-radius:3px;overflow:hidden;border:1px solid var(--border)}
-  .sc-vol-seg{height:100%;position:relative;cursor:default}
-  .sc-vol-seg:hover::after{content:attr(data-tip);position:absolute;bottom:18px;left:50%;transform:translateX(-50%);background:var(--surface2);border:1px solid var(--border2);color:var(--text);font-size:8px;padding:2px 5px;border-radius:3px;white-space:nowrap;z-index:99;font-family:var(--mono)}
-  .sc-risk{display:flex;flex-direction:column;gap:4px}
-  .sc-risk-title{font-size:8px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em}
-  .sc-risk-item{display:flex;align-items:flex-start;gap:6px;padding:4px 7px;border-radius:4px;border-left:2px solid transparent}
-  .sc-risk-item.danger{border-left-color:var(--loss);background:rgba(248,113,113,.05)}
-  .sc-risk-item.caution{border-left-color:#fbbf24;background:rgba(251,191,36,.05)}
-  .sc-risk-item.good{border-left-color:var(--win);background:rgba(74,222,128,.05)}
-  .sc-risk-item.info{border-left-color:var(--accent);background:rgba(122,162,247,.05)}
-  .sc-risk-icon{font-size:10px;flex-shrink:0;margin-top:1px}
-  .sc-risk-text{flex:1}
-  .sc-risk-time{font-family:var(--mono);font-size:9px;font-weight:600;color:var(--text);display:block}
-  .sc-risk-desc{font-size:9px;color:var(--muted);line-height:1.4;margin-top:1px}
+  const trade   = db.trades[idx];
+  const newSize = req.body.size      ? +req.body.size      : trade.size;
+  const newDir  = req.body.direction || trade.direction;
+  const pts     = newDir === 'Long' ? trade.exit_price - trade.entry_price : trade.entry_price - trade.exit_price;
+  const pnl     = pts * trade.ppp * newSize;
+  const newNote = req.body.note !== undefined ? req.body.note : trade.note;
 
-  /* ── JOURNAL PANEL ── */
-  .journal-panel{flex:1;display:flex;flex-direction:column;overflow:hidden;min-width:0}
-  .app{display:flex;flex-direction:column;height:100%;overflow:hidden}
+  db.trades[idx] = { ...trade, size: newSize, direction: newDir, points: pts, pnl, note: newNote };
+  writeDb(db);
+  res.json({ ok: true });
+});
 
-  /* HEADER */
-  .header{display:flex;align-items:center;justify-content:space-between;padding:8px 14px;background:var(--surface);border-bottom:1px solid var(--border);flex-shrink:0}
-  .logo{font-family:var(--mono);font-size:11px;font-weight:700;color:var(--accent);letter-spacing:.08em}
-  .badge{font-family:var(--mono);font-size:10px;color:var(--muted);background:var(--border);padding:2px 6px;border-radius:3px;margin-left:8px}
-  .pulse{width:6px;height:6px;border-radius:50%;background:var(--win);animation:pulse 2s infinite;margin-right:8px;flex-shrink:0}
-  .last-update{font-family:var(--mono);font-size:9px;color:var(--muted)}
+// ─── CLEAR ───────────────────────────────────────────────────────────────────
+app.delete('/api/trades', (req, res) => {
+  writeDb({ trades: [], executions: [], nextId: 1 });
+  res.json({ ok: true });
+});
 
-  /* TABS */
-  .tabs{display:flex;align-items:center;gap:2px;padding:6px 14px;background:var(--surface);border-bottom:1px solid var(--border);flex-shrink:0}
-  .tab{font-size:11px;font-weight:500;padding:5px 14px;border-radius:4px;cursor:pointer;border:1px solid transparent;color:var(--muted);transition:all .15s}
-  .tab:hover{color:var(--text);background:var(--border)}
-  .tab.active{color:var(--accent);background:rgba(122,162,247,.1);border-color:var(--accent)}
+// ─── HEALTH ──────────────────────────────────────────────────────────────────
+app.get('/health', (req, res) => res.json({ status: 'ok', uptime: process.uptime() }));
 
-  /* NEW TRADE BANNER */
-  .ntb{display:none;padding:10px 14px;background:var(--surface);border-bottom:1px solid var(--accent);flex-shrink:0;flex-direction:column;gap:8px}
-  .ntb.visible{display:flex}
-  .ntb-top{display:flex;align-items:center;gap:8px}
-  .ntb-badge{font-family:var(--mono);font-size:9px;font-weight:700;color:#0b0e14;background:var(--accent);padding:2px 7px;border-radius:3px}
-  .ntb-info{font-family:var(--mono);font-size:11px;color:var(--muted);flex:1}
-  .ntb-dismiss{font-size:10px;color:var(--muted);background:none;border:none;cursor:pointer}
-  .ntb-row{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
-  .ntb-label{font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;width:36px;flex-shrink:0}
-  .dir-btns{display:flex;gap:4px}
-  .dir-btn{font-family:var(--mono);font-size:11px;font-weight:700;padding:4px 12px;border-radius:4px;cursor:pointer;border:1px solid var(--border2);background:var(--bg);color:var(--muted);transition:all .1s}
-  .dir-btn.long.active{background:rgba(74,222,128,.15);border-color:var(--long);color:var(--long)}
-  .dir-btn.short.active{background:rgba(248,113,113,.15);border-color:var(--short);color:var(--short)}
-  .size-btns{display:flex;gap:3px;flex-wrap:wrap}
-  .size-btn{font-family:var(--mono);font-size:10px;padding:4px 8px;border-radius:3px;cursor:pointer;border:1px solid var(--border2);background:var(--bg);color:var(--muted);transition:all .1s}
-  .size-btn.active{background:var(--accent);border-color:var(--accent);color:#0b0e14;font-weight:700}
-  .size-btn:hover:not(.active){border-color:var(--accent);color:var(--text)}
-  .save-btn{font-family:var(--mono);font-size:11px;font-weight:700;padding:5px 16px;background:var(--win);color:#0b0e14;border:none;border-radius:4px;cursor:pointer;margin-left:auto}
+// ─── INDICATOR SNAPSHOT ──────────────────────────────────────────────────────
+let latestIndicators = null;
 
-  /* CONTENT */
-  .content{flex:1;overflow:hidden;display:flex;flex-direction:column}
+app.post('/api/indicators', express.text({ type: '*/*' }), (req, res) => {
+  try {
+    let payload = req.body;
+    if (typeof payload === 'string') {
+      try {
+        const cleaned = payload.replace(/:\s*NaN/g, ':null').replace(/:\s*Infinity/g, ':null').replace(/:\s*-Infinity/g, ':null');
+        payload = JSON.parse(cleaned);
+      } catch(e) {
+        return res.json({ ok: false, error: 'parse failed' });
+      }
+    }
+    if (payload && (payload.type === 'indicators' || payload.ema9 || payload.close)) {
+      latestIndicators = { ...payload, type: 'indicators', receivedAt: Date.now() };
+      console.log(`Indicators: close=${payload.close} ema9=${payload.ema9} rsi=${payload.rsi}`);
+    }
+    res.json({ ok: true });
+  } catch (err) {
+    res.json({ ok: false, error: err.message });
+  }
+});
 
-  /* LIVE VIEW */
-  .live-view{flex:1;overflow:hidden;display:flex;flex-direction:column;padding:10px;gap:8px}
-  .stats-row{display:grid;grid-template-columns:repeat(5,1fr);gap:6px;flex-shrink:0}
-  .stat-card{background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:8px 10px}
-  .stat-label{font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:3px}
-  .stat-value{font-family:var(--mono);font-size:14px;font-weight:700;color:var(--text)}
-  .stat-value.win{color:var(--win)}.stat-value.loss{color:var(--loss)}
-  .table-wrap{flex:1;overflow:auto;background:var(--surface);border:1px solid var(--border);border-radius:6px}
-  table{width:100%;border-collapse:collapse}
-  thead th{font-family:var(--mono);font-size:9px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;padding:8px 10px;text-align:right;border-bottom:1px solid var(--border);background:var(--bg);position:sticky;top:0;white-space:nowrap}
-  thead th:first-child,thead th:nth-child(2),thead th:nth-child(3){text-align:left}
-  tbody tr{border-bottom:1px solid var(--border);transition:background .1s}
-  tbody tr:last-child{border-bottom:none}
-  tbody tr:hover{background:rgba(255,255,255,.02)}
-  tbody tr.row-long{border-left:2px solid var(--long)}
-  tbody tr.row-short{border-left:2px solid var(--short)}
-  tbody tr.row-empty{border-left:2px solid transparent}
-  td{font-family:var(--mono);font-size:11px;padding:6px 10px;color:var(--neutral);text-align:right;white-space:nowrap}
-  td:first-child{text-align:left;color:var(--muted2);font-size:9px}
-  td:nth-child(2){text-align:left}
-  td:nth-child(3){text-align:left;color:var(--muted);font-size:10px}
-  .dir-long{color:var(--long);font-weight:600}.dir-short{color:var(--short);font-weight:600}
-  .pnl-win{color:var(--win);font-weight:700}.pnl-loss{color:var(--loss);font-weight:700}
-  .pts-win{color:var(--win)}.pts-loss{color:var(--loss)}
-  @keyframes flash-in{0%{background:rgba(122,162,247,.2)}100%{background:transparent}}
-  tr.new-flash{animation:flash-in 2s ease-out}
+app.get('/api/indicators', (req, res) => res.json(latestIndicators || {}));
 
-  /* NOTE CELL */
-  .note-cell{position:relative;text-align:center!important;width:28px}
-  .note-btn{background:none;border:none;cursor:pointer;font-size:12px;opacity:.35;transition:opacity .15s;padding:0 2px}
-  .note-btn:hover,.note-btn.has-note{opacity:1}
-  .note-btn.has-note{color:var(--note)}
-
-  /* NOTE TOOLTIP/POPUP */
-  .note-popup{display:none;position:fixed;z-index:1000;background:var(--surface2);border:1px solid var(--note);border-radius:6px;padding:10px;width:260px;box-shadow:0 4px 20px rgba(0,0,0,.5)}
-  .note-popup.visible{display:block}
-  .note-popup textarea{width:100%;height:80px;background:var(--bg);border:1px solid var(--border2);border-radius:4px;color:var(--text);font-family:var(--sans);font-size:11px;padding:6px 8px;resize:none;outline:none;line-height:1.5}
-  .note-popup textarea:focus{border-color:var(--note)}
-  .note-popup-footer{display:flex;align-items:center;justify-content:space-between;margin-top:6px}
-  .note-popup-hint{font-size:9px;color:var(--muted)}
-  .note-save-btn{font-family:var(--mono);font-size:10px;font-weight:700;padding:3px 10px;background:var(--note);color:#0b0e14;border:none;border-radius:3px;cursor:pointer}
-
-  /* DIARY VIEW */
-  .diary-view{flex:1;overflow:hidden;display:none;flex-direction:column;gap:0}
-  .diary-view.active{display:flex}
-  .diary-nav{display:flex;align-items:center;gap:8px;padding:8px 14px;background:var(--surface);border-bottom:1px solid var(--border);flex-shrink:0}
-  .diary-nav-btn{font-family:var(--mono);font-size:14px;padding:3px 10px;background:none;border:1px solid var(--border2);border-radius:4px;color:var(--text);cursor:pointer;transition:all .1s}
-  .diary-nav-btn:hover{border-color:var(--accent);color:var(--accent)}
-  .diary-date-label{font-family:var(--mono);font-size:13px;font-weight:700;color:var(--text);flex:1}
-  .diary-day-pnl{font-family:var(--mono);font-size:13px;font-weight:700}
-  .diary-dots{display:flex;align-items:center;gap:4px;padding:6px 14px;background:var(--bg);border-bottom:1px solid var(--border);flex-shrink:0;overflow-x:auto;scrollbar-width:none}
-  .diary-dots::-webkit-scrollbar{display:none}
-  .diary-dot{width:28px;height:28px;border-radius:50%;border:1px solid var(--border2);background:var(--surface);cursor:pointer;display:flex;align-items:center;justify-content:center;font-family:var(--mono);font-size:9px;color:var(--muted);flex-shrink:0;transition:all .1s;position:relative}
-  .diary-dot:hover{border-color:var(--accent)}
-  .diary-dot.active{border-color:var(--accent);background:rgba(122,162,247,.15);color:var(--accent);font-weight:700}
-  .diary-dot.today{border-color:var(--accent)}
-  .diary-dot.has-trades.win{border-color:var(--win)}
-  .diary-dot.has-trades.loss{border-color:var(--loss)}
-  .diary-dot.has-trades.win.active{background:rgba(74,222,128,.15);color:var(--win)}
-  .diary-dot.has-trades.loss.active{background:rgba(248,113,113,.15);color:var(--loss)}
-  .diary-content{flex:1;overflow:auto;padding:14px;display:flex;flex-direction:column;gap:12px}
-  .diary-day-header{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:14px 16px;flex-shrink:0}
-  .diary-day-title{font-family:var(--mono);font-size:14px;font-weight:700;color:var(--text);margin-bottom:8px}
-  .diary-day-stats{display:grid;grid-template-columns:repeat(5,1fr);gap:8px}
-  .diary-day-stat{text-align:center}
-  .diary-day-stat-val{font-family:var(--mono);font-size:14px;font-weight:700}
-  .diary-day-stat-lbl{font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-top:2px}
-  .diary-day-note{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:12px 14px;flex-shrink:0}
-  .diary-day-note-label{font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px}
-  .diary-day-note textarea{width:100%;background:transparent;border:none;color:var(--text);font-family:var(--sans);font-size:12px;resize:none;outline:none;line-height:1.6;min-height:48px}
-  .diary-day-note textarea::placeholder{color:var(--muted2)}
-  .diary-day-note-hint{font-size:9px;color:var(--muted2);margin-top:4px}
-  .diary-trade-card{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:12px 14px;display:flex;flex-direction:column;gap:8px}
-  .diary-trade-card.win{border-left:3px solid var(--win)}
-  .diary-trade-card.loss{border-left:3px solid var(--loss)}
-  .dtc-top{display:flex;align-items:center;gap:10px}
-  .dtc-dir{font-family:var(--mono);font-size:12px;font-weight:700}
-  .dtc-dir.long{color:var(--long)}.dtc-dir.short{color:var(--short)}
-  .dtc-time{font-family:var(--mono);font-size:10px;color:var(--muted)}
-  .dtc-prices{font-family:var(--mono);font-size:11px;color:var(--neutral)}
-  .dtc-pnl{font-family:var(--mono);font-size:14px;font-weight:700;margin-left:auto}
-  .dtc-pnl.win{color:var(--win)}.dtc-pnl.loss{color:var(--loss)}
-  .dtc-stats{display:flex;gap:14px}
-  .dtc-stat{font-size:10px;color:var(--muted)}
-  .dtc-stat span{font-family:var(--mono);color:var(--neutral);margin-left:3px}
-  .dtc-note-area{display:flex;align-items:flex-start;gap:6px}
-  .dtc-note-input{flex:1;background:var(--bg);border:1px solid var(--border2);border-radius:4px;color:var(--text);font-family:var(--sans);font-size:11px;padding:5px 8px;resize:none;outline:none;line-height:1.5;min-height:32px;transition:border-color .15s}
-  .dtc-note-input:focus{border-color:var(--note)}
-  .dtc-note-input::placeholder{color:var(--muted2)}
-  .dtc-note-save{font-family:var(--mono);font-size:9px;padding:3px 8px;background:none;border:1px solid var(--border2);border-radius:3px;color:var(--muted);cursor:pointer;white-space:nowrap;transition:all .15s;flex-shrink:0;margin-top:2px}
-  .dtc-note-save:hover{border-color:var(--note);color:var(--note)}
-  .diary-empty{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;color:var(--muted);padding:40px;text-align:center}
-  .diary-empty .icon{font-size:28px;opacity:.3}
-
-  /* HISTORY VIEW */
-  .history-view{flex:1;overflow:hidden;padding:10px;display:none;flex-direction:column;gap:8px}
-  .history-view.active{display:flex}
-  .filter-row{display:flex;align-items:center;gap:6px;flex-shrink:0;flex-wrap:wrap}
-  .filter-btn{font-family:var(--mono);font-size:10px;padding:4px 10px;border-radius:3px;cursor:pointer;border:1px solid var(--border2);background:var(--bg);color:var(--muted);transition:all .1s}
-  .filter-btn.active{background:var(--accent);border-color:var(--accent);color:#0b0e14;font-weight:700}
-  .filter-btn:hover:not(.active){border-color:var(--accent);color:var(--text)}
-  .date-inputs{display:flex;gap:6px;align-items:center;margin-left:auto}
-  .date-input{font-family:var(--mono);font-size:10px;background:var(--bg);border:1px solid var(--border2);border-radius:3px;color:var(--text);padding:4px 8px}
-  .date-input::-webkit-calendar-picker-indicator{filter:invert(.5)}
-
-  /* FOOTER */
-  .footer{padding:5px 14px;background:var(--bg);border-top:1px solid var(--border);display:flex;align-items:center;flex-shrink:0}
-  .footer-note{font-family:var(--mono);font-size:9px;color:var(--muted)}
-  .clear-btn{margin-left:auto;font-family:var(--mono);font-size:9px;color:var(--muted);background:none;border:1px solid var(--border2);border-radius:3px;padding:2px 7px;cursor:pointer}
-  .clear-btn:hover{color:var(--loss);border-color:var(--loss)}
-
-  /* AUTO ANALYSIS */
-  .dtc-analysis{background:var(--bg);border:1px solid var(--border2);border-radius:4px;padding:8px 10px;font-size:10px;line-height:1.7;color:var(--neutral);white-space:pre-wrap;font-family:var(--sans)}
-  .dtc-analysis-label{font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px;display:flex;align-items:center;justify-content:space-between}
-  .dtc-analysis-refresh{font-size:9px;color:var(--muted);background:none;border:1px solid var(--border2);border-radius:3px;padding:1px 6px;cursor:pointer}
-  .dtc-analysis-refresh:hover{color:var(--accent);border-color:var(--accent)}
-  tbody tr.row-expanded{background:rgba(122,162,247,0.04)}
-  tbody tr:hover{background:rgba(255,255,255,.02);cursor:pointer}
-  ::-webkit-scrollbar{width:4px;height:4px}
-  ::-webkit-scrollbar-thumb{background:var(--border2);border-radius:2px}
-</style>
-</head>
-<body>
-<div class="root-split">
-
-  <!-- ══════════════════════════════════════════════════════════
-       LEFT — BTC INTEL FEED
-  ══════════════════════════════════════════════════════════ -->
-  <div class="intel-panel">
-    <div class="intel-header">
-      <div class="intel-title">
-        <div class="intel-pulse"></div>
-        BTC INTEL
-      </div>
-      <span class="intel-refresh-label" id="intelRefreshLabel">loading…</span>
-    </div>
-    <div class="intel-timer-bar"><div class="intel-timer-fill" id="intelTimerFill" style="width:100%"></div></div>
-    <div class="intel-feed" id="intelFeed">
-      <div class="intel-loading">
-        <div class="mini-spinner"></div>
-        <p>Pulling live BTC signals…</p>
-      </div>
-    </div>
-  </div>
-
-  <!-- SESSION CLOCK -->
-  <div class="session-clock" id="sessionClock">
-    <div class="session-clock-header" onclick="toggleSessionClock()">
-      <span class="session-clock-title">⏱ Session Clock &amp; Risk</span>
-      <span class="session-clock-toggle" id="scToggle">▲</span>
-    </div>
-    <div class="session-clock-body" id="scBody">
-
-      <!-- Current session hero -->
-      <div class="sc-current" id="scCurrent"></div>
-
-      <!-- All sessions strip -->
-      <div class="sc-sessions-strip" id="scStrip"></div>
-
-      <!-- 24h volume heatmap -->
-      <div class="sc-volume-row">
-        <div class="sc-vol-label">24h volume profile (UTC)</div>
-        <div class="sc-vol-track" id="scVolTrack"></div>
-      </div>
-
-      <!-- Risk panel -->
-      <div class="sc-risk">
-        <div class="sc-risk-title">⚠ Session risk &amp; timing guide</div>
-        <div id="scRisk"></div>
-      </div>
-
-    </div>
-  </div>
-
-  <!-- ══════════════════════════════════════════════════════════
-       RIGHT — JOURNAL
-  ══════════════════════════════════════════════════════════ -->
-  <div class="journal-panel">
-    <div class="app">
-
-      <div class="header">
-        <div style="display:flex;align-items:center">
-          <span class="pulse"></span>
-          <span class="logo">SCALP JOURNAL</span>
-          <span class="badge">BTC/USD · CFD</span>
-        </div>
-        <span class="last-update" id="lastUpdate">connecting…</span>
-      </div>
-
-      <div class="tabs">
-        <button class="tab active" onclick="switchTab('live')">⚡ Live</button>
-        <button class="tab" onclick="switchTab('diary')">📖 Diary</button>
-        <button class="tab" onclick="switchTab('history')">📋 History</button>
-      </div>
-
-      <div class="ntb" id="ntb">
-        <div class="ntb-top">
-          <span class="ntb-badge">NEW TRADE</span>
-          <span class="ntb-info" id="ntbInfo">—</span>
-          <button class="ntb-dismiss" onclick="dismissEdit()">✕</button>
-        </div>
-        <div class="ntb-row">
-          <span class="ntb-label">Dir</span>
-          <div class="dir-btns">
-            <button class="dir-btn long"  id="dirLong"  onclick="setDir('Long')">LONG</button>
-            <button class="dir-btn short" id="dirShort" onclick="setDir('Short')">SHORT</button>
-          </div>
-        </div>
-        <div class="ntb-row">
-          <span class="ntb-label">Size</span>
-          <div class="size-btns" id="sizeBtns"></div>
-          <button class="save-btn" onclick="saveEdit()">✓ Done</button>
-        </div>
-      </div>
-
-      <div class="content">
-
-        <!-- LIVE TAB -->
-        <div class="live-view" id="liveView">
-          <div class="stats-row">
-            <div class="stat-card"><div class="stat-label">Net P&L</div><div class="stat-value" id="statNet">—</div></div>
-            <div class="stat-card"><div class="stat-label">Win Rate</div><div class="stat-value" id="statWr">—</div></div>
-            <div class="stat-card"><div class="stat-label">W / L</div><div class="stat-value" id="statWl">—</div></div>
-            <div class="stat-card"><div class="stat-label">Best</div><div class="stat-value win" id="statBest">—</div></div>
-            <div class="stat-card"><div class="stat-label">Worst</div><div class="stat-value loss" id="statWorst">—</div></div>
-          </div>
-          <div class="table-wrap">
-            <table id="liveTable" style="display:none">
-              <thead><tr><th>#</th><th>Dir</th><th>Date</th><th>Time</th><th>Entry</th><th>Exit</th><th>Points</th><th>Size</th><th>P&L</th><th></th></tr></thead>
-              <tbody id="liveBody"></tbody>
-            </table>
-            <div class="empty-state" id="liveEmpty" style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;color:var(--muted);padding:40px">
-              <span style="font-size:24px;opacity:.3">⬡</span>
-              <p>Trade as normal — journal updates automatically</p>
-            </div>
-          </div>
-        </div>
-
-        <!-- DIARY TAB -->
-        <div class="diary-view" id="diaryView">
-          <div class="diary-nav">
-            <button class="diary-nav-btn" onclick="diaryPrevMonth()">‹</button>
-            <span class="diary-date-label" id="diaryMonthLabel">—</span>
-            <button class="diary-nav-btn" onclick="diaryNextMonth()">›</button>
-            <span class="diary-day-pnl" id="diaryMonthPnl"></span>
-          </div>
-          <div class="diary-dots" id="diaryDots"></div>
-          <div class="diary-content" id="diaryContent">
-            <div class="diary-empty"><span class="icon">📖</span><p>Select a day to view your trades</p></div>
-          </div>
-        </div>
-
-        <!-- HISTORY TAB -->
-        <div class="history-view" id="historyView">
-          <div class="filter-row">
-            <button class="filter-btn active" onclick="setFilter('all')">All</button>
-            <button class="filter-btn" onclick="setFilter('today')">Today</button>
-            <button class="filter-btn" onclick="setFilter('yesterday')">Yesterday</button>
-            <button class="filter-btn" onclick="setFilter('week')">This Week</button>
-            <button class="filter-btn" onclick="setFilter('month')">This Month</button>
-            <button class="filter-btn" onclick="setFilter('wins')">Wins</button>
-            <button class="filter-btn" onclick="setFilter('losses')">Losses</button>
-            <div class="date-inputs">
-              <input type="date" class="date-input" id="dateFrom" onchange="setFilter('custom')">
-              <span style="color:var(--muted)">→</span>
-              <input type="date" class="date-input" id="dateTo" onchange="setFilter('custom')">
-            </div>
-          </div>
-          <div class="table-wrap">
-            <table id="historyTable" style="display:none">
-              <thead><tr><th>#</th><th>Dir</th><th>Date</th><th>Time</th><th>Entry</th><th>Exit</th><th>Points</th><th>Size</th><th>P&L</th><th>Note</th></tr></thead>
-              <tbody id="historyBody"></tbody>
-            </table>
-            <div class="diary-empty" id="historyEmpty"><span class="icon">⬡</span><p>No trades match filter</p></div>
-          </div>
-          <div class="stats-row" style="flex-shrink:0">
-            <div class="stat-card"><div class="stat-label">Filtered P&L</div><div class="stat-value" id="hStatNet">—</div></div>
-            <div class="stat-card"><div class="stat-label">Win Rate</div><div class="stat-value" id="hStatWr">—</div></div>
-            <div class="stat-card"><div class="stat-label">W / L</div><div class="stat-value" id="hStatWl">—</div></div>
-            <div class="stat-card"><div class="stat-label">Best</div><div class="stat-value win" id="hStatBest">—</div></div>
-            <div class="stat-card"><div class="stat-label">Worst</div><div class="stat-value loss" id="hStatWorst">—</div></div>
-          </div>
-        </div>
-
-      </div>
-
-      <div class="footer">
-        <span class="footer-note">Trade logs automatically · click 📝 to add notes</span>
-        <button class="clear-btn" onclick="clearTrades()">Clear all</button>
-      </div>
-    </div>
-  </div>
-</div>
-
-<!-- Note popup -->
-<div class="note-popup" id="notePopup">
-  <textarea id="noteText" placeholder="Add a note for this trade…"></textarea>
-  <div class="note-popup-footer">
-    <span class="note-popup-hint">Ctrl+Enter to save · Esc to close</span>
-    <button class="note-save-btn" onclick="saveNotePopup()">Save</button>
-  </div>
-</div>
-
-<script>
-// ══════════════════════════════════════════
-// INTEL FEED
-// ══════════════════════════════════════════
-const INTEL_SYSTEM = `You are a live BTC/USD scalping intelligence analyst. The trader scalps BTCUSD on a 15-second chart using EMAs (9,20,50,200) and RSI. They ONLY need signals that could affect price in the next 1-60 minutes.
+// ─── BTC INTEL FEED ──────────────────────────────────────────────────────────
+const INTEL_PROMPT = `You are a live BTC/USD scalping intelligence analyst. The trader scalps BTCUSD on a 15-second chart using EMAs (9,20,50,200) and RSI. They ONLY need signals that could affect price in the next 1-60 minutes.
 
 Return ONLY a raw JSON array — no markdown, no preamble, no backticks. 6-8 items, newest/most urgent first:
 [{"headline":"under 12 words","source":"e.g. Whale Alert / CoinTelegraph / CME / CryptoQuant / Binance Flow / On-chain / Fed / Twitter/X","category":"macro|onchain|news|sentiment|technical|flow","score":1-5,"time":"e.g. just now / 3 min ago / 12 min ago","bullets":["scalp impact point 1","point 2","point 3"]}]
 
 Score guide — 5=act NOW (cascade/halt/flash crash), 4=high (whale >500BTC/funding flip/exchange spike), 3=moderate (mid whale/options expiry/HTF divergence), 2=low (background sentiment/slow metric), 1=noise.
-Focus: whale alerts, exchange inflows/outflows, funding rates, liquidation clusters, options data, large spot flow, macro timing, momentum signals. Be realistic. Vary signals each call — do not repeat same items.`;
+Focus: whale alerts, exchange inflows/outflows, funding rates, liquidation clusters, options data, large spot flow, macro timing, momentum signals. Be realistic. Vary signals each call.`;
 
-let intelTimer = 10;
-let intelInterval = null;
-
-function intelScoreClass(s){return s>=5?'s5':s>=4?'s4':s>=3?'s3':s>=2?'s2':'s1'}
-function intelPipClass(s){return s>=5?'p5':s>=4?'p4':s>=3?'p3':s>=2?'p2':'p1'}
-function intelCatClass(c){return'cat-'+(c||'news')}
-function intelCatLabel(c){return{macro:'macro',onchain:'on-chain',news:'news',sentiment:'sentiment',technical:'technical',flow:'flow'}[c]||c}
-
-function renderIntel(items){
-  const feed=document.getElementById('intelFeed');
-  if(!items||!items.length){feed.innerHTML='<div class="intel-loading"><p style="color:var(--loss)">No signals — retrying…</p></div>';return}
-  feed.innerHTML='';
-  items.forEach((item,idx)=>{
-    const el=document.createElement('div');
-    el.className='intel-item';
-    const pips=[1,2,3,4,5].map(i=>`<div class="pip ${i<=item.score?intelPipClass(item.score):''}"></div>`).join('');
-    const bullets=(item.bullets||[]).map(b=>`<li>${b}</li>`).join('');
-    el.innerHTML=`
-      <div class="intel-item-header" onclick="toggleIntel(${idx})">
-        <div class="score-badge ${intelScoreClass(item.score)}">${item.score}</div>
-        <div class="intel-meta">
-          <div class="intel-tags">
-            <span class="intel-source">${item.source||'—'}</span>
-            <span class="intel-cat ${intelCatClass(item.category)}">${intelCatLabel(item.category)}</span>
-            <span class="intel-time">${item.time||'just now'}</span>
-          </div>
-          <div class="intel-headline">${item.headline||''}</div>
-        </div>
-        <span class="intel-chevron" id="ichev-${idx}">▼</span>
-      </div>
-      <div class="intel-body" id="ibody-${idx}">
-        <ul class="intel-bullets">${bullets}</ul>
-        <div class="intel-pips"><span class="intel-pips-label">effect</span>${pips}<span class="intel-pips-label" style="margin-left:4px">${item.score}/5</span></div>
-      </div>`;
-    feed.appendChild(el);
-  });
-}
-
-function toggleIntel(idx){
-  const body=document.getElementById('ibody-'+idx);
-  const chev=document.getElementById('ichev-'+idx);
-  const open=body.classList.toggle('open');
-  chev.classList.toggle('open',open);
-  chev.textContent=open?'▲':'▼';
-}
-
-async function fetchIntel(){
-  try{
-    const res=await fetch('/api/intel',{
-      method:'POST',
-      headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({utc:new Date().toUTCString()})
+app.post('/api/intel', async (req, res) => {
+  try {
+    const utc = (req.body && req.body.utc) || new Date().toUTCString();
+    const response = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': process.env.ANTHROPIC_API_KEY,
+        'anthropic-version': '2023-06-01'
+      },
+      body: JSON.stringify({
+        model: 'claude-sonnet-4-6',
+        max_tokens: 1000,
+        system: INTEL_PROMPT,
+        messages: [{ role: 'user', content: `Fresh BTC scalp intel now. UTC: ${utc}. Vary from previous calls.` }]
+      })
     });
-    const data=await res.json();
-    if(data.items) renderIntel(data.items);
-    else throw new Error(data.error||'No items');
-  }catch(e){
-    document.getElementById('intelFeed').innerHTML=`<div class="intel-loading"><div class="mini-spinner"></div><p>Retrying… (${e.message.slice(0,40)})</p></div>`;
+    const data  = await response.json();
+    const text  = (data.content || []).map(c => c.text || '').join('');
+    const clean = text.replace(/```json|```/g, '').trim();
+    const items = JSON.parse(clean);
+    res.json({ ok: true, items });
+  } catch (err) {
+    console.error('Intel error:', err.message);
+    res.status(500).json({ ok: false, error: err.message });
   }
-}
-
-function startIntelTimer(){
-  intelTimer=10;
-  if(intelInterval)clearInterval(intelInterval);
-  intelInterval=setInterval(()=>{
-    intelTimer--;
-    const pct=(intelTimer/10)*100;
-    document.getElementById('intelTimerFill').style.width=pct+'%';
-    document.getElementById('intelRefreshLabel').textContent=intelTimer>0?`${intelTimer}s`:'fetching…';
-    if(intelTimer<=0){
-      intelTimer=10;
-      document.getElementById('intelTimerFill').style.width='100%';
-      fetchIntel();
-    }
-  },1000);
-}
-
-fetchIntel();
-startIntelTimer();
-
-// ══════════════════════════════════════════
-// JOURNAL (unchanged)
-// ══════════════════════════════════════════
-const SIZES=[0.01,0.02,0.05,0.08,0.1,0.2,0.4,0.5,0.6,0.8,1];
-let allTrades=[],lastIds=new Set(),editId=null,editDir='Long',editSize=null;
-let activeTab='live',activeFilter='all';
-let diaryYear,diaryMonth,diaryDay;
-let noteTradeId=null,expandedTradeId=null;
-
-const now0=new Date();
-diaryYear=now0.getFullYear();diaryMonth=now0.getMonth();diaryDay=now0.getDate();
-
-const sizeBtnsEl=document.getElementById('sizeBtns');
-SIZES.forEach(s=>{
-  const b=document.createElement('button');
-  b.className='size-btn';b.textContent=s;
-  b.onclick=()=>setSize(s);
-  sizeBtnsEl.appendChild(b);
 });
 
-function switchTab(tab){
-  activeTab=tab;
-  document.querySelectorAll('.tab').forEach((t,i)=>{t.classList.toggle('active',['live','diary','history'][i]===tab);});
-  document.getElementById('liveView').style.display=tab==='live'?'flex':'none';
-  document.getElementById('diaryView').classList.toggle('active',tab==='diary');
-  document.getElementById('historyView').classList.toggle('active',tab==='history');
-  if(tab==='diary')renderDiary();
-  if(tab==='history')renderHistory();
-}
+// ─── AUTO ANALYSIS ────────────────────────────────────────────────────────────
+function generateAutoAnalysis(trade, allTrades, indicators) {
+  const entry       = parseFloat(trade.entry_price);
+  const exit        = parseFloat(trade.exit_price);
+  const direction   = trade.direction;
+  const entryTime   = new Date(trade.entry_time);
+  const exitTime    = new Date(trade.exit_time);
+  const points      = parseFloat(trade.points);
+  const pnl         = parseFloat(trade.pnl);
+  const size        = parseFloat(trade.size);
+  const won         = pnl > 0;
+  const durationSec = Math.round((trade.exit_time - trade.entry_time) / 1000);
+  const durStr      = durationSec < 60 ? `${durationSec}s` : `${Math.floor(durationSec/60)}m ${durationSec%60}s`;
 
-function setDir(d){editDir=d;document.getElementById('dirLong').classList.toggle('active',d==='Long');document.getElementById('dirShort').classList.toggle('active',d==='Short');}
-function setSize(s){editSize=s;document.querySelectorAll('.size-btn').forEach(b=>b.classList.toggle('active',parseFloat(b.textContent)===s));}
-function dismissEdit(){editId=null;document.getElementById('ntb').classList.remove('visible');}
-async function saveEdit(){
-  if(!editId)return;
-  await fetch(`/api/trade/${editId}`,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({direction:editDir,size:editSize})});
-  dismissEdit();poll();
-}
-document.addEventListener('keydown',e=>{
-  if(e.key==='Enter'&&editId)saveEdit();
-  if(e.key==='Escape'){dismissEdit();closeNotePopup();}
-});
+  const sections = [];
 
-function toggleTradeExpand(id){
-  expandedTradeId=expandedTradeId===id?null:id;
-  renderLive(allTrades,null);
-  if(expandedTradeId)setTimeout(()=>refreshAnalysis(expandedTradeId),150);
-}
+  const outcome = won ? '✅ WIN' : '❌ LOSS';
+  const hour = entryTime.getUTCHours();
+  const min  = entryTime.getUTCMinutes();
+  const t    = hour + min/60;
 
-function openNotePopup(tradeId,anchorEl,currentNote){
-  noteTradeId=tradeId;
-  const popup=document.getElementById('notePopup'),ta=document.getElementById('noteText');
-  ta.value=currentNote||'';popup.classList.add('visible');
-  const rect=anchorEl.getBoundingClientRect();
-  popup.style.top=Math.min(rect.bottom+4,window.innerHeight-160)+'px';
-  popup.style.left=Math.max(rect.left-220,8)+'px';ta.focus();
-}
-function closeNotePopup(){noteTradeId=null;document.getElementById('notePopup').classList.remove('visible');}
-async function saveNotePopup(){
-  if(!noteTradeId)return;
-  const note=document.getElementById('noteText').value.trim();
-  await fetch(`/api/trade/${noteTradeId}`,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({note})});
-  closeNotePopup();poll();
-}
-document.getElementById('noteText').addEventListener('keydown',e=>{if(e.key==='Enter'&&e.ctrlKey)saveNotePopup();if(e.key==='Escape')closeNotePopup();});
-document.addEventListener('click',e=>{
-  const popup=document.getElementById('notePopup');
-  if(popup.classList.contains('visible')&&!popup.contains(e.target)&&!e.target.classList.contains('note-btn'))closeNotePopup();
-});
+  let session, sessionRisk;
+  if      (t >= 12 && t < 16) { session = 'London/NY Overlap'; sessionRisk = 'HIGH VOLUME — best session for BTC scalping'; }
+  else if (t >= 7  && t < 12) { session = 'London Session';    sessionRisk = 'Good liquidity — strong directional moves'; }
+  else if (t >= 16 && t < 21) { session = 'New York Session';  sessionRisk = 'Good liquidity — US news can spike volatility'; }
+  else if (t >= 23 || t < 7)  { session = 'Asian Session';     sessionRisk = 'LOW VOLATILITY — choppy, low follow-through on BTC'; }
+  else                         { session = 'Off-Hours';         sessionRisk = 'LOW LIQUIDITY — wider spreads, unpredictable moves'; }
 
-const fmt={
-  price:v=>v==null?'—':Number(v).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2}),
-  pts:v=>v==null?'—':(v>=0?'+':'')+Number(v).toFixed(2),
-  pnl:v=>v==null?'—':(v>=0?'+$':'-$')+Math.abs(v).toFixed(2),
-  time:v=>{if(!v)return'—';return new Date(v).toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit',second:'2-digit'})},
-  dateShort:v=>{if(!v)return'—';return new Date(v).toLocaleDateString('en-GB',{day:'2-digit',month:'short'})},
-};
+  sections.push(`━━━ TRADE SUMMARY ━━━\n${outcome}  ${direction.toUpperCase()}  ${size} lots\nEntry: ${entry.toFixed(2)}  →  Exit: ${exit.toFixed(2)}\nPoints: ${points >= 0 ? '+' : ''}${points.toFixed(2)}  |  P&L: ${pnl >= 0 ? '+$' : '-$'}${Math.abs(pnl).toFixed(2)}\nHold time: ${durStr}  |  Entry: ${entryTime.toUTCString().slice(17, 25)} UTC`);
+  sections.push(`━━━ SESSION ANALYSIS ━━━\n📍 ${session}\n${sessionRisk}${session === 'Asian Session' && !won ? '\n⚠️ LIKELY FACTOR: Asian session chop is a common cause of false breakouts on BTC.' : ''}${session === 'Off-Hours' && !won ? '\n⚠️ LIKELY FACTOR: Low liquidity periods have manipulative wicks and poor spread.' : ''}`);
 
-function renderLive(trades,stats){
-  // Today's trades only, newest first — no cap
-  const tod=new Date();tod.setHours(0,0,0,0);
-  const todayTrades=[...trades]
-    .filter(t=>t.exit_time&&new Date(t.exit_time)>=tod)
-    .sort((a,b)=>b.exit_time-a.exit_time);
-
-  const newIds=new Set(todayTrades.map(t=>t.id));
-  const brandNew=todayTrades.find(t=>!lastIds.has(t.id));
-  if(brandNew&&!editId){
-    editId=brandNew.id;editSize=null;setDir(brandNew.direction);
-    document.querySelectorAll('.size-btn').forEach(b=>b.classList.remove('active'));
-    const m=SIZES.find(s=>s===brandNew.size);if(m)setSize(m);
-    document.getElementById('ntbInfo').textContent=`${brandNew.direction} · ${fmt.price(brandNew.entry_price)} → ${fmt.price(brandNew.exit_price)} · ${fmt.pts(brandNew.points)} pts`;
-    document.getElementById('ntb').classList.add('visible');
-  }
-  lastIds=newIds;
-
-  // Stats from today's trades
-  const wins=todayTrades.filter(t=>t.pnl>0).length,losses=todayTrades.filter(t=>t.pnl<0).length;
-  const net=todayTrades.reduce((s,t)=>s+(t.pnl||0),0);
-  const pnls=todayTrades.map(t=>t.pnl).filter(v=>v!=null);
-  if(todayTrades.length>0){
-    const wr=wins+losses>0?wins/(wins+losses):0;
-    const n=document.getElementById('statNet');
-    n.textContent=fmt.pnl(net);n.className='stat-value '+(net>=0?'win':'loss');
-    document.getElementById('statWr').textContent=Math.round(wr*100)+'%';
-    document.getElementById('statWl').textContent=wins+'W / '+losses+'L';
-    document.getElementById('statBest').textContent=pnls.length?fmt.pnl(Math.max(...pnls)):'—';
-    document.getElementById('statWorst').textContent=pnls.length?fmt.pnl(Math.min(...pnls)):'—';
-  }
-
-  const tbody=document.getElementById('liveBody'),empty=document.getElementById('liveEmpty'),table=document.getElementById('liveTable');
-  if(!todayTrades.length){table.style.display='none';empty.style.display='flex';return;}
-  table.style.display='';empty.style.display='none';
-  tbody.innerHTML='';
-  todayTrades.forEach((trade,i)=>{
-    const tr=document.createElement('tr');
-    const isNew=trade.id===(brandNew&&brandNew.id),isExpanded=expandedTradeId===trade.id;
-    tr.className='row-'+trade.direction.toLowerCase()+(isNew?' new-flash':'')+(isExpanded?' row-expanded':'');
-    tr.style.cursor='pointer';tr.onclick=()=>toggleTradeExpand(trade.id);
-    const pc=trade.points>=0?'pts-win':'pts-loss',nc=trade.pnl>=0?'pnl-win':'pnl-loss',dc=trade.direction==='Long'?'dir-long':'dir-short';
-    tr.innerHTML=`<td>${i+1}</td><td class="${dc}">${trade.direction}</td><td style="color:var(--muted);font-size:10px">${fmt.dateShort(trade.entry_time)}</td><td>${fmt.time(trade.entry_time)}</td><td>${fmt.price(trade.entry_price)}</td><td>${fmt.price(trade.exit_price)}</td><td class="${pc}">${fmt.pts(trade.points)}</td><td>${trade.size}</td><td class="${nc}">${fmt.pnl(trade.pnl)}</td><td style="text-align:center;color:var(--muted);font-size:9px">${isExpanded?'▲':'▼'}</td>`;
-    tbody.appendChild(tr);
-    if(isExpanded){
-      const detailRow=document.createElement('tr');
-      detailRow.className='row-'+trade.direction.toLowerCase();
-      const detailTd=document.createElement('td');detailTd.colSpan=9;detailTd.style.padding='0';
-      const analysis=trade.auto_analysis||'Click ↻ Refresh to generate analysis';
-      const noteVal=trade.note||'';
-      detailTd.innerHTML=`<div style="padding:12px 14px;background:rgba(17,21,32,0.95);border-top:1px solid var(--border2);display:flex;gap:14px;flex-wrap:wrap"><div style="flex:1;min-width:220px"><div class="dtc-analysis-label">🤖 Auto Analysis <button class="dtc-analysis-refresh" onclick="event.stopPropagation();refreshAnalysis(${trade.id})">↻ Refresh</button></div><div id="analysis_${trade.id}" class="dtc-analysis">${analysis}</div></div><div style="flex:1;min-width:180px"><div class="dtc-analysis-label">📝 Note</div><div style="display:flex;gap:6px;align-items:flex-start"><textarea class="dtc-note-input" id="tnote_${trade.id}" placeholder="Why did you take this trade?" onkeydown="handleTradeNoteKey(event,${trade.id})" onclick="event.stopPropagation()" style="min-height:60px;flex:1">${noteVal}</textarea><button class="dtc-note-save" onclick="event.stopPropagation();saveTradeNote(${trade.id})">Save</button></div></div></div>`;
-      detailRow.appendChild(detailTd);tbody.appendChild(detailRow);
-    }
-  });
-}
-
-function renderDiary(){renderDiaryDots();renderDiaryDay();}
-function renderDiaryDots(){
-  const fullMonths=['January','February','March','April','May','June','July','August','September','October','November','December'];
-  document.getElementById('diaryMonthLabel').innerHTML=`${fullMonths[diaryMonth]} ${diaryYear}`;
-  const monthTrades=allTrades.filter(t=>{if(!t.exit_time)return false;const d=new Date(t.exit_time);return d.getFullYear()===diaryYear&&d.getMonth()===diaryMonth;});
-  const mNet=monthTrades.reduce((s,t)=>s+(t.pnl||0),0);
-  const mpEl=document.getElementById('diaryMonthPnl');
-  if(monthTrades.length){mpEl.textContent=fmt.pnl(mNet);mpEl.style.color=mNet>=0?'var(--win)':'var(--loss)';}else{mpEl.textContent='';}
-  const dayMap={};
-  for(const t of allTrades){if(!t.exit_time)continue;const d=new Date(t.exit_time);if(d.getFullYear()!==diaryYear||d.getMonth()!==diaryMonth)continue;const day=d.getDate();if(!dayMap[day])dayMap[day]=[];dayMap[day].push(t);}
-  const daysInMonth=new Date(diaryYear,diaryMonth+1,0).getDate();
-  const todayD=new Date(),isCurrentMonth=todayD.getFullYear()===diaryYear&&todayD.getMonth()===diaryMonth;
-  const dots=document.getElementById('diaryDots');dots.innerHTML='';
-  for(let d=1;d<=daysInMonth;d++){
-    const trades=dayMap[d]||[],pnl=trades.reduce((s,t)=>s+(t.pnl||0),0);
-    const dot=document.createElement('div');
-    dot.className='diary-dot'+(isCurrentMonth&&d===todayD.getDate()?' today':'')+(d===diaryDay?' active':'')+(trades.length?(' has-trades '+(pnl>=0?'win':'loss')):'');
-    dot.textContent=d;dot.title=trades.length?`${trades.length} trades · ${fmt.pnl(pnl)}`:'No trades';
-    dot.onclick=()=>{diaryDay=d;renderDiary();};
-    dots.appendChild(dot);
-  }
-  setTimeout(()=>{const a=dots.querySelector('.diary-dot.active');if(a)a.scrollIntoView({behavior:'smooth',inline:'center',block:'nearest'});},50);
-}
-
-function renderDiaryDay(){
-  const content=document.getElementById('diaryContent');
-  const dayNames=['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
-  const monNames=['January','February','March','April','May','June','July','August','September','October','November','December'];
-  const dayTrades=allTrades.filter(t=>{if(!t.exit_time)return false;const d=new Date(t.exit_time);return d.getFullYear()===diaryYear&&d.getMonth()===diaryMonth&&d.getDate()===diaryDay;}).sort((a,b)=>a.exit_time-b.exit_time);
-  const dateObj=new Date(diaryYear,diaryMonth,diaryDay);
-  const dateStr=`${dayNames[dateObj.getDay()]}, ${diaryDay} ${monNames[diaryMonth]} ${diaryYear}`;
-  const net=dayTrades.reduce((s,t)=>s+(t.pnl||0),0),wins=dayTrades.filter(t=>t.pnl>0).length,losses=dayTrades.filter(t=>t.pnl<0).length;
-  const pts=dayTrades.reduce((s,t)=>s+(t.points||0),0),wr=wins+losses>0?Math.round(wins/(wins+losses)*100):0;
-  const dayNoteKey=`daynote_${diaryYear}_${diaryMonth}_${diaryDay}`,dayNote=localStorage.getItem(dayNoteKey)||'';
-  let html=`<div class="diary-day-header"><div class="diary-day-title">${dateStr}</div><div class="diary-day-stats"><div class="diary-day-stat"><div class="diary-day-stat-val" style="color:${net>=0?'var(--win)':'var(--loss)'}">${dayTrades.length?fmt.pnl(net):'—'}</div><div class="diary-day-stat-lbl">Net P&L</div></div><div class="diary-day-stat"><div class="diary-day-stat-val">${dayTrades.length?wr+'%':'—'}</div><div class="diary-day-stat-lbl">Win Rate</div></div><div class="diary-day-stat"><div class="diary-day-stat-val">${dayTrades.length?wins+'W / '+losses+'L':'—'}</div><div class="diary-day-stat-lbl">W / L</div></div><div class="diary-day-stat"><div class="diary-day-stat-val" style="color:${pts>=0?'var(--win)':'var(--loss)'}">${dayTrades.length?fmt.pts(pts):'—'}</div><div class="diary-day-stat-lbl">Total Pts</div></div><div class="diary-day-stat"><div class="diary-day-stat-val">${dayTrades.length}</div><div class="diary-day-stat-lbl">Trades</div></div></div></div>`;
-  html+=`<div class="diary-day-note"><div class="diary-day-note-label">📝 Day Notes</div><textarea id="dayNoteArea" placeholder="How did today go? What did you notice about the market?"onblur="saveDayNote()">${dayNote}</textarea><div class="diary-day-note-hint">Auto-saves when you click away · Ctrl+Enter to save</div></div>`;
-  if(!dayTrades.length){html+=`<div class="diary-empty"><span class="icon" style="font-size:20px;opacity:.3">—</span><p>No trades on this day</p></div>`;}
-  else{for(const t of dayTrades){const isWin=t.pnl>=0,dc=t.direction==='Long'?'long':'short',ptsCol=t.points>=0?'var(--win)':'var(--loss)';html+=`<div class="diary-trade-card ${isWin?'win':'loss'}"><div class="dtc-top"><span class="dtc-dir ${dc}">${t.direction}</span><span class="dtc-time">${fmt.time(t.entry_time)}</span><span class="dtc-prices">${fmt.price(t.entry_price)} → ${fmt.price(t.exit_price)}</span><span class="dtc-pnl ${isWin?'win':'loss'}">${fmt.pnl(t.pnl)}</span></div><div class="dtc-stats"><div class="dtc-stat">Points<span style="color:${ptsCol}">${fmt.pts(t.points)}</span></div><div class="dtc-stat">Size<span>${t.size} lots</span></div><div class="dtc-stat">$/pt<span>$${t.ppp||1}</span></div></div><div class="dtc-note-area"><textarea class="dtc-note-input" id="tnote_${t.id}" placeholder="Add a note for this trade…" onkeydown="handleTradeNoteKey(event,${t.id})">${t.note||''}</textarea><button class="dtc-note-save" onclick="saveTradeNote(${t.id})">Save</button></div><div><div class="dtc-analysis-label">🤖 Auto Analysis<button class="dtc-analysis-refresh" onclick="refreshAnalysis(${t.id})">&#x21BB; Refresh</button></div><div class="dtc-analysis" id="analysis_${t.id}">${t.auto_analysis||'Click Refresh to generate analysis…'}</div></div></div>`;}}
-  content.innerHTML=html;
-  const dna=document.getElementById('dayNoteArea');
-  if(dna){dna.addEventListener('keydown',e=>{if(e.key==='Enter'&&e.ctrlKey)saveDayNote();});dna.addEventListener('input',()=>{dna.style.height='auto';dna.style.height=dna.scrollHeight+'px';});dna.style.height='auto';dna.style.height=Math.max(dna.scrollHeight,48)+'px';}
-}
-
-function saveDayNote(){const key=`daynote_${diaryYear}_${diaryMonth}_${diaryDay}`;const ta=document.getElementById('dayNoteArea');if(ta)localStorage.setItem(key,ta.value);}
-async function saveTradeNote(id){
-  const ta=document.getElementById(`tnote_${id}`);if(!ta)return;
-  await fetch(`/api/trade/${id}`,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({note:ta.value.trim()})});
-  const btn=ta.parentElement.querySelector('.dtc-note-save');
-  if(btn){btn.textContent='✓ Saved';btn.style.color='var(--win)';setTimeout(()=>{btn.textContent='Save';btn.style.color='';},1500);}
-}
-function handleTradeNoteKey(e,id){if(e.key==='Enter'&&e.ctrlKey){e.preventDefault();saveTradeNote(id);}}
-function diaryPrevMonth(){diaryMonth--;if(diaryMonth<0){diaryMonth=11;diaryYear--;}diaryDay=1;renderDiary();}
-function diaryNextMonth(){diaryMonth++;if(diaryMonth>11){diaryMonth=0;diaryYear++;}diaryDay=1;renderDiary();}
-
-function setFilter(f){
-  activeFilter=f;
-  document.querySelectorAll('.filter-btn').forEach((b,i)=>{b.classList.toggle('active',['all','today','yesterday','week','month','wins','losses','custom'][i]===f);});
-  renderHistory();
-}
-function renderHistory(){
-  const n0=new Date(),tod=new Date(n0.getFullYear(),n0.getMonth(),n0.getDate());
-  let filtered=[...allTrades].sort((a,b)=>b.exit_time-a.exit_time);
-  if(activeFilter==='today')filtered=filtered.filter(t=>new Date(t.exit_time)>=tod);
-  else if(activeFilter==='yesterday'){const y=new Date(tod);y.setDate(tod.getDate()-1);filtered=filtered.filter(t=>{const d=new Date(t.exit_time);return d>=y&&d<tod;});}
-  else if(activeFilter==='week'){const ws=new Date(tod);ws.setDate(tod.getDate()-tod.getDay());filtered=filtered.filter(t=>new Date(t.exit_time)>=ws);}
-  else if(activeFilter==='month')filtered=filtered.filter(t=>new Date(t.exit_time)>=new Date(n0.getFullYear(),n0.getMonth(),1));
-  else if(activeFilter==='wins')filtered=filtered.filter(t=>t.pnl>0);
-  else if(activeFilter==='losses')filtered=filtered.filter(t=>t.pnl<0);
-  else if(activeFilter==='custom'){
-    const from=document.getElementById('dateFrom').value,to=document.getElementById('dateTo').value;
-    if(from)filtered=filtered.filter(t=>new Date(t.exit_time)>=new Date(from));
-    if(to)filtered=filtered.filter(t=>new Date(t.exit_time)<=new Date(to+'T23:59:59'));
-  }
-  const tbody=document.getElementById('historyBody'),empty=document.getElementById('historyEmpty'),table=document.getElementById('historyTable');
-  if(!filtered.length){table.style.display='none';empty.style.display='flex';}
-  else{
-    table.style.display='';empty.style.display='none';tbody.innerHTML='';
-    filtered.forEach((t,i)=>{
-      const tr=document.createElement('tr');tr.className='row-'+t.direction.toLowerCase();
-      const pc=t.points>=0?'pts-win':'pts-loss',nc=t.pnl>=0?'pnl-win':'pnl-loss',dc=t.direction==='Long'?'dir-long':'dir-short';
-      const note=t.note?`<span title="${t.note}" style="color:var(--note);cursor:help">📝</span>`:'';
-      tr.innerHTML=`<td>${i+1}</td><td class="${dc}">${t.direction}</td><td style="color:var(--muted);font-size:10px">${fmt.dateShort(t.entry_time)}</td><td>${fmt.time(t.entry_time)}</td><td>${fmt.price(t.entry_price)}</td><td>${fmt.price(t.exit_price)}</td><td class="${pc}">${fmt.pts(t.points)}</td><td>${t.size}</td><td class="${nc}">${fmt.pnl(t.pnl)}</td><td style="text-align:center">${note}</td>`;
-      tbody.appendChild(tr);
-    });
-  }
-  const wins=filtered.filter(t=>t.pnl>0).length,losses=filtered.filter(t=>t.pnl<0).length;
-  const net=filtered.reduce((s,t)=>s+(t.pnl||0),0),pnls=filtered.map(t=>t.pnl).filter(v=>v!=null),wr=wins+losses>0?Math.round(wins/(wins+losses)*100):0;
-  const nEl=document.getElementById('hStatNet');nEl.textContent=fmt.pnl(net);nEl.className='stat-value '+(net>=0?'win':'loss');
-  document.getElementById('hStatWr').textContent=wr+'%';document.getElementById('hStatWl').textContent=wins+'W / '+losses+'L';
-  document.getElementById('hStatBest').textContent=pnls.length?fmt.pnl(Math.max(...pnls)):'—';
-  document.getElementById('hStatWorst').textContent=pnls.length?fmt.pnl(Math.min(...pnls)):'—';
-}
-
-async function poll(){
-  try{
-    const r=await fetch('/api/trades?all=1'),data=await r.json();
-    allTrades=data.closed||[];
-    document.getElementById('lastUpdate').textContent='updated '+new Date().toLocaleTimeString('en-GB');
-    if(activeTab==='live')renderLive(allTrades,data.stats);
-    if(activeTab==='diary')renderDiaryDots();
-    autoAnalyseNew();
-    if(activeTab==='history')renderHistory();
-  }catch(e){}
-}
-async function refreshAnalysis(id){
-  const el=document.getElementById('analysis_'+id);
-  if(el){el.textContent='Generating…';el.style.opacity='0.5';}
-  try{const r=await fetch('/api/analyse/'+id),d=await r.json();if(el&&d.analysis){el.textContent=d.analysis;el.style.opacity='1';}}
-  catch(e){if(el)el.textContent='Error generating analysis';}
-}
-async function autoAnalyseNew(){for(const t of allTrades){if(!t.auto_analysis)await fetch('/api/analyse/'+t.id);}}
-async function clearTrades(){
-  if(!confirm('Clear all trades?'))return;
-  await fetch('/api/trades',{method:'DELETE'});
-  allTrades=[];lastIds=new Set();poll();
-}
-// ══════════════════════════════════════════
-// SESSION CLOCK & RISK
-// ══════════════════════════════════════════
-
-// All times in UTC hours
-const SESSIONS = [
-  { name:'Sydney',      color:'#89dceb', dot:'#89dceb', open:21, close:6,  overnightWrap:true,  label:'Sydney / Pacific' },
-  { name:'Tokyo',       color:'#a6e3a1', dot:'#a6e3a1', open:0,  close:9,  overnightWrap:false, label:'Tokyo / Asian' },
-  { name:'London',      color:'#7aa2f7', dot:'#7aa2f7', open:7,  close:16, overnightWrap:false, label:'London / European' },
-  { name:'New York',    color:'#f38ba8', dot:'#f38ba8', open:12, close:21, overnightWrap:false, label:'New York / US' },
-];
-
-// High-volume 24h profile (UTC hours 0-23), 0-10 scale
-const VOL_PROFILE = [
-  3,3,2,2,2,2,2,4, // 00-07 Asia open, quiet
-  6,7,7,7,8,9,10,9, // 08-15 London open → London/NY overlap peak
-  8,7,6,5,4,3,3,3   // 16-23 NY afternoon fade → Sydney open
-];
-
-// Volatility colour
-function volColor(v){
-  if(v>=9) return'#f87171';
-  if(v>=7) return'#fb923c';
-  if(v>=5) return'#fbbf24';
-  if(v>=3) return'#4ade80';
-  return '#3d4560';
-}
-
-function utcH(){ return new Date().getUTCHours(); }
-function utcM(){ return new Date().getUTCMinutes(); }
-function utcS(){ return new Date().getUTCSeconds(); }
-function utcDecimal(){ return utcH() + utcM()/60 + utcS()/3600; }
-
-function isSessionOpen(s){
-  const h = utcDecimal();
-  if(s.overnightWrap) return h >= s.open || h < s.close;
-  return h >= s.open && h < s.close;
-}
-
-function getSessionColor(s){ return s.open<=7?'#89dceb':s.open===7?'#7aa2f7':s.open===12?'#f38ba8':'#a6e3a1'; }
-
-function secsUntilOpen(s){
-  const now = utcDecimal();
-  let diff;
-  if(s.overnightWrap){
-    if(now >= s.open) diff = (24 - now + s.close);
-    else diff = s.close - now;
-    // actually time until open = distance from now to s.open
-    if(now < s.open) diff = s.open - now;
-    else diff = 24 - now + s.open;
+  const priceMove = Math.abs(exit - entry);
+  const movePct   = (priceMove / entry * 100).toFixed(3);
+  let priceAnalysis = `━━━ PRICE ACTION ━━━\n`;
+  if (!won) {
+    priceAnalysis += `Price moved ${priceMove.toFixed(1)} pts (${movePct}%) AGAINST your ${direction} position.\n`;
+    priceAnalysis += direction === 'Long'
+      ? `You bought at ${entry.toFixed(2)} but price fell to ${exit.toFixed(2)}.\nPossible reasons:\n  • Entry was at local resistance / swing high\n  • Bearish momentum was already in control\n  • No confirmation of support before entry\n  • Counter-trend trade against prevailing direction`
+      : `You sold at ${entry.toFixed(2)} but price rose to ${exit.toFixed(2)}.\nPossible reasons:\n  • Entry was at local support / swing low\n  • Bullish momentum was already in control\n  • No confirmation of resistance before entry\n  • Counter-trend trade against prevailing direction`;
   } else {
-    if(now < s.open) diff = s.open - now;
-    else diff = 24 - now + s.open;
+    priceAnalysis += `Price moved ${priceMove.toFixed(1)} pts (${movePct}%) IN FAVOUR of your ${direction} position.\n`;
+    priceAnalysis += direction === 'Long' ? `Bought at ${entry.toFixed(2)}, price rose to ${exit.toFixed(2)}. ✓ Good long entry.` : `Sold at ${entry.toFixed(2)}, price fell to ${exit.toFixed(2)}. ✓ Good short entry.`;
   }
-  return Math.round(diff * 3600);
-}
+  sections.push(priceAnalysis);
 
-function secsUntilClose(s){
-  const now = utcDecimal();
-  let diff;
-  if(s.overnightWrap){
-    if(now >= s.open) diff = 24 - now + s.close;
-    else diff = s.close - now;
+  let holdAnalysis = `━━━ HOLD TIME ANALYSIS ━━━\n`;
+  if      (durationSec < 10)  holdAnalysis += `⚡ ${durStr} hold — VERY fast close.\n${won ? 'Quick scalp that worked — good discipline.' : 'Stopped out almost immediately. Consider waiting for confirmation.'}`;
+  else if (durationSec < 30)  holdAnalysis += `⚡ ${durStr} hold — Fast scalp.\n${won ? 'Clean quick trade.' : 'Fast loss. Possible false signal or wrong level.'}`;
+  else if (durationSec < 120) holdAnalysis += `⏱ ${durStr} hold — Standard scalp.\n${won ? 'Trade played out as expected.' : 'Market did not respect your level within timeframe.'}`;
+  else                         holdAnalysis += `⏳ ${durStr} hold — Longer than typical scalp.\n${won ? 'Patience paid off.' : 'Extended hold on a losing trade. Consider tighter stop discipline.'}`;
+  sections.push(holdAnalysis);
+
+  const hasIndicators = indicators && (Date.now() - indicators.receivedAt) < 300000;
+  if (hasIndicators) {
+    const { ema9, ema20, ema50, ema200, rsi, vol_ratio, atr, macd, macd_signal, htf_ema50, swing_h, swing_l } = indicators;
+    const close = parseFloat(indicators.close) || entry;
+    let indAnalysis = `━━━ INDICATOR ANALYSIS ━━━\n`;
+    if (ema9 && ema20 && ema50 && ema200) {
+      const bullAlign = ema9 > ema20 && ema20 > ema50;
+      const bearAlign = ema9 < ema20 && ema20 < ema50;
+      indAnalysis += `📊 EMAs: EMA9:${ema9.toFixed(1)} EMA20:${ema20.toFixed(1)} EMA50:${ema50.toFixed(1)} EMA200:${ema200.toFixed(1)}\n`;
+      if      (bullAlign && direction === 'Short' && !won) indAnalysis += `⚠️ KEY: You shorted into a bullish EMA stack.\n`;
+      else if (bearAlign && direction === 'Long'  && !won) indAnalysis += `⚠️ KEY: You longed into a bearish EMA stack.\n`;
+      else if (bullAlign && direction === 'Long')          indAnalysis += `✓ Trading WITH bullish EMA alignment.\n`;
+      else if (bearAlign && direction === 'Short')         indAnalysis += `✓ Trading WITH bearish EMA alignment.\n`;
+      else                                                  indAnalysis += `Mixed EMA alignment — choppy conditions.\n`;
+    }
+    if (rsi) indAnalysis += `📈 RSI: ${rsi.toFixed(1)}${rsi>70&&direction==='Long'&&!won?' — ⚠️ Buying overbought':rsi<30&&direction==='Short'&&!won?' — ⚠️ Shorting oversold':''}\n`;
+    if (vol_ratio) indAnalysis += `📊 Volume: ${vol_ratio.toFixed(2)}x avg${vol_ratio<0.7&&!won?' — ⚠️ Low volume entry, likely false breakout':''}\n`;
+    if (atr) indAnalysis += `📏 ATR: ${atr.toFixed(1)} pts — suggested stop: ${(atr*1.5).toFixed(0)} pts\n`;
+    sections.push(indAnalysis.trimEnd());
   } else {
-    if(now < s.close) diff = s.close - now;
-    else diff = 24 - now + s.close;
-  }
-  return Math.round(diff * 3600);
-}
-
-function fmtCountdown(secs){
-  if(secs<=0) return '00:00:00';
-  const h=Math.floor(secs/3600),m=Math.floor((secs%3600)/60),s=secs%60;
-  return String(h).padStart(2,'0')+':'+String(m).padStart(2,'0')+':'+String(s).padStart(2,'0');
-}
-
-function fmtUTCTime(){
-  const n=new Date();
-  return String(n.getUTCHours()).padStart(2,'0')+':'+String(n.getUTCMinutes()).padStart(2,'0')+':'+String(n.getUTCSeconds()).padStart(2,'0');
-}
-
-function fmtUKTime(){
-  return new Date().toLocaleTimeString('en-GB',{timeZone:'Europe/London',hour:'2-digit',minute:'2-digit',second:'2-digit'});
-}
-
-function fmtTZTime(tz){
-  return new Date().toLocaleTimeString('en-GB',{timeZone:tz,hour:'2-digit',minute:'2-digit',second:'2-digit'});
-}
-
-function getPrimarySession(){
-  const h = utcDecimal();
-  // London/NY overlap is highest priority
-  const londonOpen = h>=7 && h<16;
-  const nyOpen     = h>=12 && h<21;
-  if(londonOpen && nyOpen) return {name:'London / NY Overlap', color:'#cba6f7', open:true, quality:5, desc:'Peak BTC volume — best scalping conditions'};
-  if(londonOpen)           return {name:'London Session',      color:'#7aa2f7', open:true, quality:4, desc:'Strong directional moves, good liquidity'};
-  if(nyOpen)               return {name:'New York Session',    color:'#f38ba8', open:true, quality:3, desc:'Good volume, watch for US news spikes'};
-  const tokyoOpen = h>=0 && h<9;
-  if(tokyoOpen)            return {name:'Tokyo / Asian Session',color:'#a6e3a1',open:true, quality:2, desc:'Lower BTC volatility, range-bound price'};
-  const sydneyOpen = h>=21 || h<6;
-  if(sydneyOpen)           return {name:'Sydney / Pacific',    color:'#89dceb', open:true, quality:1, desc:'Very low BTC activity, wide spreads'};
-  return                          {name:'Off-Hours',           color:'#585f7a', open:false,quality:0, desc:'No major session open'};
-}
-
-function getNextSession(){
-  const h = utcDecimal();
-  // Find next opening in order: London(7), NY(12), Tokyo(0/24), Sydney(21)
-  const opens = [
-    {name:'Tokyo open',   utc:0,  color:'#a6e3a1'},
-    {name:'London open',  utc:7,  color:'#7aa2f7'},
-    {name:'NY open',      utc:12, color:'#f38ba8'},
-    {name:'London/NY overlap', utc:12, color:'#cba6f7'},
-    {name:'Sydney open',  utc:21, color:'#89dceb'},
-  ];
-  // Find soonest future open
-  let best=null, bestSecs=Infinity;
-  for(const o of opens){
-    let diff = o.utc - h;
-    if(diff<=0) diff+=24;
-    const secs = Math.round(diff*3600);
-    if(secs>0 && secs<bestSecs){ bestSecs=secs; best={...o,secs}; }
-  }
-  return best;
-}
-
-function getRiskItems(){
-  const h   = utcH();
-  const m   = utcM();
-  const hm  = h + m/60; // decimal for sub-hour checks
-  const dow = new Date().getUTCDay(); // 0=Sun,1=Mon,...,5=Fri,6=Sat
-
-  // Each entry: utcOpen/utcClose in decimal hours (null = day-of-week rule, no hour check)
-  // active: function returning bool for "are we in this window right now"
-  const ALL = [
-    // ── GOOD ──
-    { type:'good',   icon:'🔥', label:'London / NY Overlap',   time:'12:00–16:00 UTC', desc:'Peak BTC volume — strongest trends, tightest spreads, best scalp conditions',     active:()=>hm>=12&&hm<16 },
-    { type:'good',   icon:'✅', label:'London Open',            time:'07:00–11:30 UTC', desc:'Good liquidity, directional moves, low spread — strong session for BTC scalping', active:()=>hm>=7&&hm<11.5 },
-    { type:'good',   icon:'✅', label:'US Market Open Burst',   time:'13:30–15:30 UTC', desc:'High momentum window — US equities open, BTC often spikes on news flow',          active:()=>hm>=13.5&&hm<15.5 },
-    { type:'good',   icon:'✅', label:'NY Morning Session',     time:'12:00–17:00 UTC', desc:'Good US volume, trend continuation after London overlap — solid scalp conditions', active:()=>hm>=12&&hm<17 },
-    // ── CAUTION ──
-    { type:'caution',icon:'⚠️', label:'London Lunch Lull',      time:'11:30–13:00 UTC', desc:'Volume drops sharply — choppy price action, false breakouts, avoid momentum trades', active:()=>hm>=11.5&&hm<13 },
-    { type:'caution',icon:'⚠️', label:'NY Afternoon Fade',      time:'17:00–19:00 UTC', desc:'Momentum fades after 17:00 UTC — range contracts, reduce size or stand aside',       active:()=>hm>=17&&hm<19 },
-    { type:'caution',icon:'⚠️', label:'Weekend Approach',       time:'Fri 20:00+ UTC',  desc:'Liquidity drops sharply Friday evening — gaps and slippage increase into weekend',   active:()=>dow===5&&hm>=20 },
-    { type:'caution',icon:'⚠️', label:'Monday Gap Risk',        time:'Mon 00:00–07:00', desc:'Weekend price gaps possible — don\'t assume Friday\'s close is support/resistance',   active:()=>dow===1&&hm<7 },
-    // ── DANGER ──
-    { type:'danger', icon:'🚫', label:'Asian / Off-Hours',      time:'00:00–07:00 UTC', desc:'Choppy BTC, false breakouts, low follow-through — avoid or cut size significantly',  active:()=>hm>=0&&hm<7 },
-    { type:'danger', icon:'🚫', label:'Late NY / Pacific Fade', time:'21:00–00:00 UTC', desc:'Fading volume, widening spreads, reversals common — high risk, consider stopping',   active:()=>hm>=21 },
-    // ── INFO ──
-    { type:'info',   icon:'📅', label:'Best Trend Days',        time:'Tue – Thu',       desc:'Historically strongest BTC intraday trend days — highest probability setups',        active:()=>dow>=2&&dow<=4 },
-    { type:'info',   icon:'📅', label:'Low Probability Days',   time:'Mon / Fri',       desc:'Monday gaps + Friday liquidity drain — reduce targets, tighter risk management',     active:()=>dow===1||dow===5 },
-  ];
-
-  // Sort: active items float to top, otherwise keep order
-  const active  = ALL.filter(r=>r.active());
-  const inactive= ALL.filter(r=>!r.active());
-  return [...active, ...inactive];
-}
-
-let scVisible = true;
-function toggleSessionClock(){
-  scVisible=!scVisible;
-  document.getElementById('scBody').style.display=scVisible?'':'none';
-  document.getElementById('scToggle').textContent=scVisible?'▲':'▼';
-}
-
-function buildVolTrack(){
-  const track = document.getElementById('scVolTrack');
-  if(!track || track.children.length>0) return; // only build once
-  const totalH = 24;
-  VOL_PROFILE.forEach((v,h)=>{
-    const seg=document.createElement('div');
-    seg.className='sc-vol-seg';
-    seg.style.width=(100/totalH)+'%';
-    seg.style.background=volColor(v);
-    seg.style.opacity='0.85';
-    seg.setAttribute('data-tip',`${String(h).padStart(2,'0')}:00 UTC — vol ${v}/10`);
-    track.appendChild(seg);
-  });
-}
-
-function updateNowMarker(){
-  const track = document.getElementById('scVolTrack');
-  if(!track) return;
-  // Remove old marker
-  const old = track.querySelector('.sc-now-line');
-  if(old) old.remove();
-  const pct = (utcDecimal()/24)*100;
-  const marker = document.createElement('div');
-  marker.className='sc-now-line';
-  marker.style.cssText=`position:absolute;left:${pct}%;top:0;width:2px;height:100%;background:white;opacity:0.9;pointer-events:none;`;
-  track.style.position='relative';
-  track.appendChild(marker);
-}
-
-function renderSessionClock(){
-  buildVolTrack();
-  updateNowMarker();
-
-  const primary = getPrimarySession();
-  const next    = getNextSession();
-
-  // Hero card
-  const cur = document.getElementById('scCurrent');
-  if(cur){
-    const ukTime  = fmtUKTime();
-    const utcTime = fmtUTCTime();
-    const nyTime  = fmtTZTime('America/New_York');
-    const tokyoTime = fmtTZTime('Asia/Tokyo');
-    const cdSecs  = primary.open ? secsUntilClose({open:0,close:0,overnightWrap:false}) : (next?next.secs:0);
-    const cdLabel = primary.open ? `closes in` : `${next?next.name+' in':'next session in'}`;
-    const cdVal   = primary.open
-      ? (() => {
-          // find the actual closing session
-          const h=utcDecimal();
-          if(h>=12&&h<16) return fmtCountdown(Math.round((16-h)*3600)); // overlap ends at 16
-          if(h>=7&&h<12)  return fmtCountdown(Math.round((16-h)*3600)); // london closes 16
-          if(h>=12&&h<21) return fmtCountdown(Math.round((21-h)*3600)); // ny closes 21
-          if(h>=0&&h<9)   return fmtCountdown(Math.round((9-h)*3600));  // tokyo closes 9
-          return fmtCountdown(next?next.secs:0);
-        })()
-      : fmtCountdown(next?next.secs:0);
-
-    cur.innerHTML=`
-      <div class="sc-session-row">
-        <span><span class="sc-status-dot ${primary.open?'open':'closed'}"></span><span class="sc-session-name" style="color:${primary.color}">${primary.name}</span></span>
-        <span style="font-size:8px;color:${primary.open?'var(--win)':'var(--muted)'}">Q${primary.quality}/5</span>
-      </div>
-      <div style="font-size:9px;color:var(--muted);margin-bottom:6px">${primary.desc}</div>
-      <div class="sc-times-row">
-        <div class="sc-time-block"><div class="sc-time-label">🇬🇧 UK</div><div class="sc-time-val">${ukTime}</div></div>
-        <div class="sc-time-block"><div class="sc-time-label">🌐 UTC</div><div class="sc-time-val">${utcTime}</div></div>
-        <div class="sc-time-block"><div class="sc-time-label">🇺🇸 New York</div><div class="sc-time-val">${nyTime}</div></div>
-        <div class="sc-time-block"><div class="sc-time-label">🇯🇵 Tokyo</div><div class="sc-time-val">${tokyoTime}</div></div>
-      </div>
-      <div class="sc-countdown-row">
-        <span class="sc-countdown-label">${cdLabel}</span>
-        <span class="sc-countdown-val" id="scCountdown">${cdVal}</span>
-      </div>`;
+    sections.push(`━━━ INDICATOR ANALYSIS ━━━\n⏳ Waiting for Pine Script data…\nMake sure the "Scalp Journal Feed" alert is active on your BTCUSD chart.`);
   }
 
-  // Sessions strip
-  const strip = document.getElementById('scStrip');
-  if(strip){
-    const h=utcDecimal();
-    const londonOpen=h>=7&&h<16, nyOpen=h>=12&&h<21, tokyoOpen=h>=0&&h<9, sydneyOpen=h>=21||h<6;
-    const overlap=londonOpen&&nyOpen;
-    const rows=[
-      {name:'London/NY',color:'#cba6f7',open:overlap,     hrs:'12:00–16:00 UTC',status:overlap?'OVERLAP':''},
-      {name:'London',   color:'#7aa2f7',open:londonOpen,   hrs:'07:00–16:00 UTC',status:londonOpen&&!overlap?'OPEN':''},
-      {name:'New York', color:'#f38ba8',open:nyOpen,       hrs:'12:00–21:00 UTC',status:nyOpen&&!overlap?'OPEN':''},
-      {name:'Tokyo',    color:'#a6e3a1',open:tokyoOpen,    hrs:'00:00–09:00 UTC',status:tokyoOpen?'OPEN':''},
-      {name:'Sydney',   color:'#89dceb',open:sydneyOpen,   hrs:'21:00–06:00 UTC',status:sydneyOpen?'OPEN':''},
-    ];
-    strip.innerHTML=rows.map(r=>`
-      <div class="sc-session-row-item ${r.open?(r.name==='London/NY'?'overlap':'active'):''}">
-        <div class="sc-sess-dot" style="background:${r.open?r.color:'var(--muted2)'}"></div>
-        <span class="sc-sess-name" style="color:${r.open?r.color:'var(--muted)'}">${r.name}</span>
-        <span class="sc-sess-hrs">${r.hrs}</span>
-        <span class="sc-sess-status" style="color:${r.open?r.color:'var(--muted2)'}">${r.status||'—'}</span>
-      </div>`).join('');
-  }
+  const sorted   = [...allTrades].sort((a,b) => b.exit_time - a.exit_time);
+  const idx      = sorted.findIndex(t => t.id === trade.id);
+  const before   = sorted.slice(idx + 1, idx + 6);
+  const todayTrades = allTrades.filter(t => { const d=new Date(t.exit_time),e=new Date(trade.exit_time); return d.toDateString()===e.toDateString(); });
+  const todayPnl    = todayTrades.reduce((s,t)=>s+(t.pnl||0),0);
+  const todayLosses = todayTrades.filter(t=>t.pnl<0).length;
+  let riskAnalysis  = `━━━ RISK & PSYCHOLOGY ━━━\n`;
+  const results     = before.map(t=>t.pnl>0?'W':'L');
+  if (results.slice(0,3).every(r=>r==='L') && !won) riskAnalysis += `⚠️ REVENGE TRADING RISK: ${results.filter(r=>r==='L').length+1} consecutive losses.\n  Step back, review bias, reduce size.\n`;
+  else if (results.slice(0,3).every(r=>r==='W') && won) riskAnalysis += `🔥 ${results.filter(r=>r==='W').length+1} consecutive wins — stay disciplined.\n`;
+  riskAnalysis += `\nToday: ${todayTrades.length} trades · P&L: ${todayPnl>=0?'+$':'-$'}${Math.abs(todayPnl).toFixed(2)} · ${todayLosses} losses`;
+  if (todayLosses >= 3) riskAnalysis += `\n⚠️ ${todayLosses} losses today — consider reviewing your bias.`;
+  sections.push(riskAnalysis.trimEnd());
 
-  // Risk items
-  const riskEl = document.getElementById('scRisk');
-  if(riskEl){
-    const items=getRiskItems();
-    riskEl.innerHTML=items.map(it=>{
-      const isNow = it.active();
-      const nowBadge = isNow
-        ? `<span style="font-family:var(--mono);font-size:7px;font-weight:700;background:${
-            it.type==='good'?'var(--win)':it.type==='danger'?'var(--loss)':it.type==='caution'?'#fbbf24':'var(--accent)'
-          };color:#0b0e14;padding:1px 5px;border-radius:2px;margin-left:5px;vertical-align:middle">▶ NOW</span>`
-        : '';
-      const activeStyle = isNow
-        ? `box-shadow:0 0 0 1px ${
-            it.type==='good'?'var(--win)':it.type==='danger'?'var(--loss)':it.type==='caution'?'#fbbf24':'var(--accent)'
-          };opacity:1;`
-        : 'opacity:0.6;';
-      return `<div class="sc-risk-item ${it.type}" style="${activeStyle}">
-        <span class="sc-risk-icon">${it.icon}</span>
-        <div class="sc-risk-text">
-          <span class="sc-risk-time">${it.label}${nowBadge}<span style="font-family:var(--mono);font-size:8px;color:var(--muted);font-weight:400;margin-left:6px">${it.time}</span></span>
-          <span class="sc-risk-desc">${it.desc}</span>
-        </div>
-      </div>`;
-    }).join('');
-  }
+  const warnings = [];
+  if (session === 'Asian Session') warnings.push('Avoid scalping BTC in Asian session — choppy, low follow-through');
+  if (session === 'Off-Hours')     warnings.push('Off-hours trading has poor liquidity and wider spreads');
+  if (durationSec < 10 && !won)   warnings.push('Entry timing was off — price moved against immediately');
+  if (durationSec > 120 && !won)  warnings.push('Held losing trade too long — tighter stop needed');
+  let takeaways = `━━━ KEY TAKEAWAYS ━━━\n`;
+  if (warnings.length > 0) warnings.forEach((w,i)=>{ takeaways+=`${i+1}. ${w}\n`; });
+  else if (won) takeaways += `✓ Good execution. Review what you did right and repeat it.\n`;
+  else          takeaways += `Review entry criteria — did all conditions align before this trade?\n`;
+  sections.push(takeaways.trimEnd());
+
+  return sections.join('\n\n');
 }
 
-// Tick every second
-renderSessionClock();
-setInterval(renderSessionClock, 1000);
+app.get('/api/analyse/:id', (req, res) => {
+  const id    = parseInt(req.params.id);
+  const db    = readDb();
+  const trade = db.trades.find(t => t.id === id);
+  if (!trade) return res.status(404).json({ error: 'Trade not found' });
+  const analysis = generateAutoAnalysis(trade, db.trades, latestIndicators);
+  const idx = db.trades.findIndex(t => t.id === id);
+  db.trades[idx].auto_analysis = analysis;
+  writeDb(db);
+  res.json({ ok: true, analysis });
+});
 
-poll();
-setInterval(poll,2000);
-</script>
-</body>
-</html>
+// ─── START ───────────────────────────────────────────────────────────────────
+app.listen(PORT, () => {
+  console.log(`BTC Trade Dashboard → http://localhost:${PORT}`);
+});
