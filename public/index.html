@@ -503,7 +503,7 @@ function clientTimeSince(pubDate){
 function intelScoreClass(s){return s>=5?'s5':s>=4?'s4':s>=3?'s3':s>=2?'s2':'s1'}
 function intelPipClass(s){return s>=5?'p5':s>=4?'p4':s>=3?'p3':s>=2?'p2':'p1'}
 function intelCatClass(c){return'cat-'+(c||'news')}
-function intelCatLabel(c){return{macro:'macro',onchain:'on-chain',news:'news',sentiment:'sentiment',technical:'technical',flow:'flow'}[c]||c}
+function intelCatLabel(c){return{macro:'macro',onchain:'on-chain',news:'news',sentiment:'social/sentiment',technical:'technical',flow:'flow'}[c]||c}
 
 function renderIntel(items){
   const feed=document.getElementById('intelFeed');
@@ -543,9 +543,10 @@ function toggleIntel(idx){
   chev.textContent=open?'▲':'▼';
 }
 
-async function fetchIntel(){
+async function fetchIntel(force){
   try{
-    const res=await fetch('/api/intel');
+    const url = force ? '/api/intel?fresh=1' : '/api/intel';
+    const res=await fetch(url);
     const data=await res.json();
     if(data.items&&data.items.length) renderIntel(data.items);
     else throw new Error(data.error||'No items returned');
@@ -555,17 +556,17 @@ async function fetchIntel(){
 }
 
 function startIntelTimer(){
-  intelTimer=10;
+  intelTimer=60;
   if(intelInterval)clearInterval(intelInterval);
   intelInterval=setInterval(()=>{
     intelTimer--;
-    const pct=(intelTimer/10)*100;
+    const pct=(intelTimer/60)*100;
     document.getElementById('intelTimerFill').style.width=pct+'%';
     document.getElementById('intelRefreshLabel').textContent=intelTimer>0?`${intelTimer}s`:'fetching…';
     if(intelTimer<=0){
-      intelTimer=10;
+      intelTimer=60;
       document.getElementById('intelTimerFill').style.width='100%';
-      fetchIntel();
+      fetchIntel(true); // force fresh data from server
     }
   },1000);
 }
