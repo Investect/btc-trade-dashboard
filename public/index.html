@@ -29,7 +29,7 @@
   .intel-refresh-label{font-family:var(--mono);font-size:9px;color:var(--muted)}
   .intel-timer-bar{height:2px;background:var(--border);flex-shrink:0}
   .intel-timer-fill{height:100%;background:var(--win);transition:width 1s linear}
-  .intel-feed{flex:1;overflow-y:auto;padding:6px;display:flex;flex-direction:column;gap:5px}
+  .intel-feed{flex:1;overflow-y:auto;padding:6px;display:flex;flex-direction:column;gap:5px;min-height:120px}
   .intel-feed::-webkit-scrollbar{width:3px}
   .intel-feed::-webkit-scrollbar-thumb{background:var(--border2);border-radius:2px}
 
@@ -73,11 +73,13 @@
   @keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}
 
   /* ── SESSION CLOCK ── */
-  .session-clock{flex-shrink:0;border-top:1px solid var(--border);background:var(--bg);overflow:hidden}
-  .session-clock-header{display:flex;align-items:center;justify-content:space-between;padding:6px 10px;background:var(--surface);border-bottom:1px solid var(--border);cursor:pointer;user-select:none}
+  .session-clock{flex-shrink:0;border-top:1px solid var(--border);background:var(--bg);overflow:hidden;max-height:55vh;display:flex;flex-direction:column}
+  .session-clock-header{display:flex;align-items:center;justify-content:space-between;padding:6px 10px;background:var(--surface);border-bottom:1px solid var(--border);cursor:pointer;user-select:none;flex-shrink:0}
   .session-clock-title{font-family:var(--mono);font-size:9px;font-weight:700;color:var(--muted);letter-spacing:.08em;text-transform:uppercase}
   .session-clock-toggle{font-size:9px;color:var(--muted2)}
-  .session-clock-body{padding:8px 10px;display:flex;flex-direction:column;gap:8px}
+  .session-clock-body{padding:8px 10px;display:flex;flex-direction:column;gap:8px;overflow-y:auto;flex:1}
+  .session-clock-body::-webkit-scrollbar{width:3px}
+  .session-clock-body::-webkit-scrollbar-thumb{background:var(--border2);border-radius:2px}
   .sc-current{background:var(--surface);border:1px solid var(--border);border-radius:5px;padding:8px 10px}
   .sc-session-row{display:flex;align-items:center;justify-content:space-between;margin-bottom:5px}
   .sc-session-name{font-family:var(--mono);font-size:11px;font-weight:700}
@@ -520,20 +522,14 @@ function toggleIntel(idx){
 
 async function fetchIntel(){
   try{
-    const res=await fetch('https://api.anthropic.com/v1/messages',{
+    const res=await fetch('/api/intel',{
       method:'POST',
       headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({
-        model:'claude-sonnet-4-6',
-        max_tokens:1000,
-        system:INTEL_SYSTEM,
-        messages:[{role:'user',content:`Fresh BTC scalp intel now. UTC: ${new Date().toUTCString()}. Vary from previous calls.`}]
-      })
+      body:JSON.stringify({utc:new Date().toUTCString()})
     });
     const data=await res.json();
-    const text=(data.content||[]).map(c=>c.text||'').join('');
-    const clean=text.replace(/```json|```/g,'').trim();
-    renderIntel(JSON.parse(clean));
+    if(data.items) renderIntel(data.items);
+    else throw new Error(data.error||'No items');
   }catch(e){
     document.getElementById('intelFeed').innerHTML=`<div class="intel-loading"><div class="mini-spinner"></div><p>Retrying… (${e.message.slice(0,40)})</p></div>`;
   }
