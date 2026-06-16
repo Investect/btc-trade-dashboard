@@ -29,12 +29,12 @@
   .intel-refresh-label{font-family:var(--mono);font-size:9px;color:var(--muted)}
   .intel-timer-bar{height:2px;background:var(--border);flex-shrink:0}
   .intel-timer-fill{height:100%;background:var(--win);transition:width 1s linear}
-  .intel-feed{flex:1;overflow-y:auto;padding:6px;display:flex;flex-direction:column;gap:5px;min-height:0}
+  .intel-feed{flex:1;overflow-y:auto;overflow-x:hidden;padding:6px;display:flex;flex-direction:column;gap:5px;min-height:0}
   .intel-feed::-webkit-scrollbar{width:3px}
   .intel-feed::-webkit-scrollbar-thumb{background:var(--border2);border-radius:2px}
 
   /* Feed items */
-  .intel-item{background:var(--surface);border:1px solid var(--border);border-radius:5px;overflow:hidden}
+  .intel-item{background:var(--surface);border:1px solid var(--border);border-radius:5px;overflow:visible}
   .intel-item-header{padding:8px 9px;cursor:pointer;display:flex;flex-direction:column;gap:4px}
   .intel-item-header:hover{background:rgba(255,255,255,.02)}
   .intel-item-top{display:flex;align-items:center;gap:5px}
@@ -539,9 +539,21 @@ function renderIntel(items){
 function toggleIntel(idx){
   const body=document.getElementById('ibody-'+idx);
   const chev=document.getElementById('ichev-'+idx);
-  const open=body.classList.toggle('open');
-  chev.classList.toggle('open',open);
-  chev.textContent=open?'▲':'▼';
+  if(!body||!chev) return;
+  const wasOpen=body.classList.contains('open');
+  // Close all open intel bodies first
+  document.querySelectorAll('[id^="ibody-"]').forEach(el=>{
+    el.classList.remove('open');
+    const i=el.id.replace('ibody-','');
+    const c=document.getElementById('ichev-'+i);
+    if(c){c.textContent='▼';}
+  });
+  // Toggle this one
+  if(!wasOpen){
+    body.classList.add('open');
+    chev.textContent='▲';
+    setTimeout(()=>body.scrollIntoView({behavior:'smooth',block:'nearest'}),60);
+  }
 }
 
 async function fetchIntel(force){
