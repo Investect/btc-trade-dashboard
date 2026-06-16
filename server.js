@@ -114,7 +114,7 @@ app.get('/api/indicators', (req, res) => res.json(latestIndicators || {}));
 // Caches results for 30s to avoid hammering free APIs
 let intelCache = null;
 let intelCacheTime = 0;
-const INTEL_CACHE_MS = 30000;
+const INTEL_CACHE_MS = 60000; // 60 seconds — RSS feeds don't update faster than this
 
 // Keyword scoring rules — Claude-style analyst logic in pure JS
 function scoreHeadline(title, source) {
@@ -204,11 +204,11 @@ function scoreHeadline(title, source) {
 }
 
 function timeSince(dateStr) {
-  if (!dateStr) return 'just now';
+  if (!dateStr) return null;
   const diff = Math.round((Date.now() - new Date(dateStr).getTime()) / 60000);
   if (diff < 1)  return 'just now';
-  if (diff < 60) return `${diff} min ago`;
-  return `${Math.floor(diff/60)}h ago`;
+  if (diff < 60) return `${diff}m ago`;
+  return `${Math.floor(diff/60)}h ${diff%60}m ago`;
 }
 
 function decayScore(score, dateStr) {
@@ -310,11 +310,11 @@ async function buildIntelFeed() {
     const { score, bullets, category } = scoreHeadline(item.title, item.source);
     const finalScore = decayScore(score, item.pubDate);
     return {
-      headline: item.title.length > 80 ? item.title.slice(0,77)+'…' : item.title,
-      source:   item.source,
+      headline:  item.title.length > 80 ? item.title.slice(0,77)+'…' : item.title,
+      source:    item.source,
       category,
-      score:    finalScore,
-      time:     timeSince(item.pubDate),
+      score:     finalScore,
+      pubDate:   item.pubDate || new Date().toISOString(), // raw timestamp for live client timer
       bullets,
     };
   });
@@ -325,7 +325,7 @@ async function buildIntelFeed() {
     source:   item.source,
     category: item.category,
     score:    item.score,
-    time:     'just now',
+    pubDate:  item.pubDate || new Date().toISOString(),
     bullets:  item.bullets,
   }));
 
