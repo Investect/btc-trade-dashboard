@@ -257,17 +257,26 @@ function resample(){
   ST.candles=synth.slice(-80);
 }
 
+let _reconnectDelay=2000, _reconnectTimer=null;
 async function pollBook(){
   try{
-    const r=await fetch(`${BASE}/api/ob/book`);if(!r.ok)throw 0;
+    const r=await fetch(`${BASE}/api/ob/book`,{signal:AbortSignal.timeout(8000)});
+    if(!r.ok)throw new Error(r.status);
     const d=await r.json();
     ST.pbids=new Map(ST.bids);ST.pasks=new Map(ST.asks);
     ST.bids.clear();ST.asks.clear();
     (d.bids||[]).forEach(([p,q])=>ST.bids.set(+p,+q));
     (d.asks||[]).forEach(([p,q])=>ST.asks.set(+p,+q));
     ST.bookReady=true;
+    _reconnectDelay=2000; // reset on success
     if(!ST.connected){ST.connected=true;setConn(true);}
-  }catch(e){setConn(false);}
+  }catch(e){
+    setConn(false);
+    // Exponential backoff retry — max 15s
+    if(_reconnectTimer)clearTimeout(_reconnectTimer);
+    _reconnectTimer=setTimeout(()=>{ pollBook(); pollTrades(); }, _reconnectDelay);
+    _reconnectDelay=Math.min(15000,_reconnectDelay*1.5);
+  }
 }
 
 async function pollTrades(){
@@ -303,7 +312,12 @@ async function pollKlines(){
   }catch(e){}
 }
 
-function setConn(on){$('conn-dot').className=on?'on':'';$('conn-lbl').textContent=on?'Live':'Reconnecting…';}
+let _retryCount=0;
+function setConn(on){
+  $('conn-dot').className=on?'on':'';
+  if(on){_retryCount=0;$('conn-lbl').textContent='Live';}
+  else{_retryCount++;$('conn-lbl').textContent=_retryCount>1?`Reconnecting… (${_retryCount})`:'Reconnecting…';}
+}
 setInterval(()=>{$('s-tps').textContent=ST.tps;ST.tps=0;},1000);
 
 function updateTopBar(){
