@@ -565,13 +565,24 @@ app.get('/api/ob/klines', async (req, res) => {
   res.status(500).json({ error: 'All kline sources failed' });
 });
 
-// ─── KEEP-ALIVE PING ─────────────────────────────────────────────────────────
-// Pings Binance every 4 minutes to keep Render from spinning down
+// ─── KEEP-ALIVE — self-ping every 4 mins so Render never spins down ─────────
+// Render free tier spins down after 15 mins of no INCOMING requests.
+// Pinging our own /health endpoint counts as an incoming request — keeps it live.
+const SELF_URL = process.env.RENDER_EXTERNAL_URL || `http://localhost:${process.env.PORT || 3000}`;
 setInterval(async () => {
   try {
-    await fetch('https://api.binance.com/api/v3/ping', { signal: AbortSignal.timeout(3000) });
-  } catch(e) {}
-}, 4 * 60 * 1000);
+    await fetch(`${SELF_URL}/health`, { signal: AbortSignal.timeout(5000) });
+    console.log('[keep-alive] ping ok');
+  } catch(e) {
+    console.log('[keep-alive] ping failed:', e.message);
+  }
+}, 4 * 60 * 1000); // every 4 minutes
 
 // ─── START ───────────────────────────────────────────────────────────────────
-app.listen(PORT, () => console.log(`BTC Trade Dashboard → http://localhost:${PORT}`));
+app.listen(PORT, () => {
+  console.log(`BTC Trade Dashboard → http://localhost:${PORT}`);
+  // Warm up immediately on start
+  setTimeout(async () => {
+    try { await fetch(`${SELF_URL}/health`, { signal: AbortSignal.timeout(5000) }); } catch(e) {}
+  }, 3000);
+});
