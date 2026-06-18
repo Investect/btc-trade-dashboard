@@ -506,5 +506,57 @@ app.get('/api/analyse/:id', (req, res) => {
 // ─── ORDER BOOK PANEL ────────────────────────────────────────────────────────
 app.get('/orderbook', (req, res) => res.sendFile(path.join(__dirname, 'public', 'orderbook.html')));
 
+// ─── BINANCE PROXY ROUTES (bypasses browser WebSocket restrictions) ───────────
+// The browser polls these endpoints; the server fetches from Binance and returns JSON
+
+app.get('/api/ob/book', async (req, res) => {
+  try {
+    const r = await fetch('https://fapi.binance.com/fapi/v1/depth?symbol=BTCUSDT&limit=20', {
+      signal: AbortSignal.timeout(4000)
+    });
+    const d = await r.json();
+    res.json({ bids: d.bids || [], asks: d.asks || [] });
+  } catch(e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.get('/api/ob/trades', async (req, res) => {
+  try {
+    const [trades, ticker] = await Promise.all([
+      fetch('https://fapi.binance.com/fapi/v1/trades?symbol=BTCUSDT&limit=20', {
+        signal: AbortSignal.timeout(4000)
+      }).then(r => r.json()),
+      fetch('https://fapi.binance.com/fapi/v1/ticker/24hr?symbol=BTCUSDT', {
+        signal: AbortSignal.timeout(4000)
+      }).then(r => r.json()),
+    ]);
+    res.json({
+      trades: (trades || []).map(t => ({
+        price:        t.price,
+        qty:          t.qty,
+        isBuyerMaker: t.isBuyerMaker,
+        time:         t.time,
+      })),
+      high: ticker.highPrice || 0,
+      low:  ticker.lowPrice  || 0,
+    });
+  } catch(e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.get('/api/ob/klines', async (req, res) => {
+  try {
+    const r = await fetch('https://fapi.binance.com/fapi/v1/klines?symbol=BTCUSDT&interval=5m&limit=80', {
+      signal: AbortSignal.timeout(5000)
+    });
+    const d = await r.json();
+    res.json({ candles: d || [] });
+  } catch(e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // ─── START ───────────────────────────────────────────────────────────────────
 app.listen(PORT, () => console.log(`BTC Trade Dashboard → http://localhost:${PORT}`));
