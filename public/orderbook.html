@@ -617,11 +617,39 @@ function draw(){
   vpVis.sort((a,b)=>b.total-a.total);
   vpVis.slice(0,5).forEach(z=>{const y=py(z.lvl);if(y<TOP||y>BOT)return;cx.save();cx.globalAlpha=.06;cx.fillStyle='#fbbf24';cx.fillRect(L,y-4,chartW,8);cx.globalAlpha=.2;cx.strokeStyle='#e0af68';cx.lineWidth=.8;cx.setLineDash([3,4]);cx.beginPath();cx.moveTo(L,y);cx.lineTo(L+chartW,y);cx.stroke();cx.restore();});
 
-  // Level lines (before candles)
+  // ── ZONE BANDS (before candles so candles sit on top) ───────────────────
   ST.levels.forEach(lv=>{
     const y=py(lv.price);
-    if(y<TOP-1||y>BOT+1){if(lv.strength===3){const atTop=lv.price>hi,ey=atTop?TOP+4:BOT-4;cx.save();cx.globalAlpha=.7;cx.fillStyle=lv.color;cx.font='600 9px "JetBrains Mono",monospace';cx.textAlign='left';cx.fillText((atTop?'▲ ':'▼ ')+fmt(lv.price)+'  '+lv.label.slice(0,22),L+6,atTop?ey+11:ey-2);cx.restore();}return;}
-    cx.save();cx.setLineDash(lv.dash||[5,4]);cx.strokeStyle=lv.color;cx.lineWidth=lv.strength===3?1.8:1;cx.globalAlpha=lv.strength===3?.85:.4;cx.beginPath();cx.moveTo(L,y);cx.lineTo(L+chartW,y);cx.stroke();cx.restore();
+    // Off-screen edge marker
+    if(y<TOP-1||y>BOT+1){
+      if(lv.strength===3){
+        const atTop=lv.price>hi,ey=atTop?TOP+2:BOT-2;
+        cx.save();
+        cx.font='600 9px "JetBrains Mono",monospace';
+        const txt=(atTop?'▲ ':'▼ ')+fmt(lv.price)+'  '+lv.label.slice(0,20);
+        const tw=cx.measureText(txt).width+12;
+        cx.fillStyle=lv.color+'1a';cx.strokeStyle=lv.color+'55';cx.lineWidth=.8;cx.setLineDash([]);
+        cx.beginPath();rr(L+4,atTop?ey:ey-13,tw,13,2);cx.fill();cx.stroke();
+        cx.fillStyle=lv.color;cx.textAlign='left';cx.fillText(txt,L+8,atTop?ey+9:ey-3);
+        cx.restore();
+      }
+      return;
+    }
+    // Zone fill — taller for strong levels
+    const zh=lv.strength===3?20:10;
+    cx.save();
+    cx.globalAlpha=lv.strength===3?0.13:0.06;
+    cx.fillStyle=lv.color;
+    cx.fillRect(L,y-zh/2,chartW,zh);
+    cx.restore();
+    // Border line
+    cx.save();
+    cx.setLineDash(lv.strength===3?[]:[4,4]);
+    cx.strokeStyle=lv.color;
+    cx.lineWidth=lv.strength===3?1.5:0.8;
+    cx.globalAlpha=lv.strength===3?0.9:0.5;
+    cx.beginPath();cx.moveTo(L,y);cx.lineTo(L+chartW,y);cx.stroke();
+    cx.restore();
   });
 
   // Candles
@@ -638,21 +666,55 @@ function draw(){
     if(lowerWick>wickThresh&&lowerWick>cRng*0.015){cx.save();cx.fillStyle='rgba(125,207,255,0.07)';cx.beginPath();rr(x-bw/2-1,lY+lowerWick*.3,bw+2,lowerWick*.7,2);cx.fill();cx.strokeStyle='rgba(125,207,255,0.3)';cx.lineWidth=1;cx.setLineDash([]);cx.stroke();cx.fillStyle='#7dcfff';cx.font='600 8px "JetBrains Mono",monospace';cx.textAlign='center';cx.fillText('▼ SWEEP',x,lY+lowerWick+11);cx.restore();}
   });
 
-  // Pill labels (after candles, on top)
-  ST.levels.forEach(lv=>{
-    const y=py(lv.price);if(y<TOP-1||y>BOT+1)return;
+  // ── ZONE LABELS — pinned to right edge, instant to scan ─────────────────
+  // Sort so labels don't overlap — skip if too close to previous
+  const sortedLvls=[...ST.levels].filter(lv=>{const y=py(lv.price);return y>=TOP&&y<=BOT;}).sort((a,b)=>py(a.price)-py(b.price));
+  let lastLabelY=-999;
+  sortedLvls.forEach(lv=>{
+    const y=py(lv.price);
+    // Skip if overlapping previous label
+    if(Math.abs(y-lastLabelY)<15&&lv.strength<3)return;
+    lastLabelY=y;
+
     cx.save();
-    const hint=lv.pill||lv.label;
-    const priceTag=fmt(lv.price);
-    cx.font='700 10px "JetBrains Mono",monospace';const ptw=cx.measureText(priceTag).width;
-    cx.font='500 9px "JetBrains Mono",monospace';const htw=cx.measureText(hint).width;
-    const totalW=8+ptw+8+htw+10,pH=17,pX=L+8,pY=y-pH/2;
-    cx.fillStyle='rgba(11,14,20,0.95)';cx.strokeStyle=lv.color;cx.lineWidth=lv.strength===3?1.5:.8;cx.setLineDash([]);
-    cx.beginPath();rr(pX,pY,totalW,pH,5);cx.fill();cx.stroke();
-    cx.fillStyle=lv.color;cx.fillRect(pX,pY,3,pH);
-    cx.font='700 10px "JetBrains Mono",monospace';cx.fillStyle=lv.color;cx.textAlign='left';cx.fillText(priceTag,pX+8,y+3.5);
-    cx.fillStyle='#1e2535';cx.fillRect(pX+8+ptw+4,pY+3,1,pH-6);
-    cx.font='500 9px "JetBrains Mono",monospace';cx.fillStyle='#cdd6f4';cx.fillText(hint,pX+8+ptw+10,y+3.5);
+    // Short scannable label
+    const icons={'equal':lv.side==='above'?'↑STOPS':'↓STOPS','round':'ROUND','bidwall':'BID WALL','askwall':'ASK WALL','stop':lv.side==='above'?'↓LONGS OUT':'↑SHORTS OUT','tp':'TAKE PROFIT'};
+    const tag=icons[lv.type]||lv.type.toUpperCase();
+    const priceStr=fmt(lv.price);
+
+    cx.font='700 10px "JetBrains Mono",monospace';
+    const pw=cx.measureText(priceStr).width;
+    cx.font=(lv.strength===3?'600':'500')+' 9px "JetBrains Mono",monospace';
+    const tw=cx.measureText(tag).width;
+    const pH=lv.strength===3?16:14;
+    const totalW=pw+tw+20;
+    const tagX=L+chartW-totalW-2;
+    const tagY=y-pH/2;
+
+    // Solid background
+    cx.fillStyle='rgba(11,14,20,0.94)';
+    cx.strokeStyle=lv.color+(lv.strength===3?'cc':'77');
+    cx.lineWidth=lv.strength===3?1.2:0.7;
+    cx.setLineDash([]);
+    cx.beginPath();rr(tagX,tagY,totalW,pH,3);cx.fill();cx.stroke();
+
+    // Left colour accent
+    cx.fillStyle=lv.color;
+    cx.fillRect(tagX,tagY,lv.strength===3?3:2,pH);
+
+    // Price
+    cx.font='700 10px "JetBrains Mono",monospace';
+    cx.fillStyle=lv.color;cx.textAlign='left';
+    cx.fillText(priceStr,tagX+6,y+3.5);
+
+    // Divider
+    cx.fillStyle=lv.color+'44';
+    cx.fillRect(tagX+6+pw+3,tagY+3,1,pH-6);
+
+    // Tag text
+    cx.font=(lv.strength===3?'600':'500')+' 9px "JetBrains Mono",monospace';
+    cx.fillStyle=lv.strength===3?lv.color:'#7c8db0';
+    cx.fillText(tag,tagX+pw+12,y+3.5);
     cx.restore();
   });
 
