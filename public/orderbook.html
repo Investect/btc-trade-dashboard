@@ -666,55 +666,73 @@ function draw(){
     if(lowerWick>wickThresh&&lowerWick>cRng*0.015){cx.save();cx.fillStyle='rgba(125,207,255,0.07)';cx.beginPath();rr(x-bw/2-1,lY+lowerWick*.3,bw+2,lowerWick*.7,2);cx.fill();cx.strokeStyle='rgba(125,207,255,0.3)';cx.lineWidth=1;cx.setLineDash([]);cx.stroke();cx.fillStyle='#7dcfff';cx.font='600 8px "JetBrains Mono",monospace';cx.textAlign='center';cx.fillText('▼ SWEEP',x,lY+lowerWick+11);cx.restore();}
   });
 
-  // ── ZONE LABELS — pinned to right edge, instant to scan ─────────────────
-  // Sort so labels don't overlap — skip if too close to previous
-  const sortedLvls=[...ST.levels].filter(lv=>{const y=py(lv.price);return y>=TOP&&y<=BOT;}).sort((a,b)=>py(a.price)-py(b.price));
-  let lastLabelY=-999;
+  // ── ZONE LABELS — left side, plain English, no overlap ──────────────────
+  const sortedLvls=[...ST.levels]
+    .filter(lv=>{const y=py(lv.price);return y>=TOP+2&&y<=BOT-2;})
+    .sort((a,b)=>py(a.price)-py(b.price));
+
+  let lastY=-999;
   sortedLvls.forEach(lv=>{
     const y=py(lv.price);
-    // Skip if overlapping previous label
-    if(Math.abs(y-lastLabelY)<15&&lv.strength<3)return;
-    lastLabelY=y;
-
+    if(Math.abs(y-lastY)<14&&lv.strength<3)return;
+    lastY=y;
     cx.save();
-    // Short scannable label
-    const icons={'equal':lv.side==='above'?'↑STOPS':'↓STOPS','round':'ROUND','bidwall':'BID WALL','askwall':'ASK WALL','stop':lv.side==='above'?'↓LONGS OUT':'↑SHORTS OUT','tp':'TAKE PROFIT'};
-    const tag=icons[lv.type]||lv.type.toUpperCase();
-    const priceStr=fmt(lv.price);
 
+    // Plain English — what does this mean to you right now
+    const meanings={
+      'equal': lv.side==='above'
+        ? 'Stops above — price hunts here first'
+        : 'Stops below — bounce likely here',
+      'round': lv.strength===3
+        ? 'Big round number — expect a reaction'
+        : 'Round number — watch for slow down',
+      'bidwall': 'Big buyers here — don't short below',
+      'askwall': 'Big sellers here — short on rejection',
+      'stop':   lv.side==='above'
+        ? 'Longs will be stopped out here'
+        : 'Shorts will be stopped out here',
+      'tp':     lv.side==='above'
+        ? 'Longs taking profit — selling pressure'
+        : 'Shorts taking profit — buying here',
+    };
+    const meaning = meanings[lv.type] || lv.label;
+    const priceStr = fmt(lv.price);
+
+    // Measure
     cx.font='700 10px "JetBrains Mono",monospace';
     const pw=cx.measureText(priceStr).width;
-    cx.font=(lv.strength===3?'600':'500')+' 9px "JetBrains Mono",monospace';
-    const tw=cx.measureText(tag).width;
+    cx.font=(lv.strength===3?'500':'400')+' 9px "JetBrains Mono",monospace';
+    const mw=cx.measureText(meaning).width;
     const pH=lv.strength===3?16:14;
-    const totalW=pw+tw+20;
-    const tagX=L+chartW-totalW-2;
+    const totalW=pw+mw+20;
+    // Pin to LEFT edge just after volume profile
+    const tagX=L+4;
     const tagY=y-pH/2;
 
-    // Solid background
-    cx.fillStyle='rgba(11,14,20,0.94)';
-    cx.strokeStyle=lv.color+(lv.strength===3?'cc':'77');
-    cx.lineWidth=lv.strength===3?1.2:0.7;
+    // Background
+    cx.fillStyle='rgba(11,14,20,0.93)';
+    cx.strokeStyle=lv.color+(lv.strength===3?'bb':'55');
+    cx.lineWidth=lv.strength===3?1.2:0.6;
     cx.setLineDash([]);
     cx.beginPath();rr(tagX,tagY,totalW,pH,3);cx.fill();cx.stroke();
 
-    // Left colour accent
+    // Colour bar on left
     cx.fillStyle=lv.color;
     cx.fillRect(tagX,tagY,lv.strength===3?3:2,pH);
 
-    // Price
+    // Price — coloured
     cx.font='700 10px "JetBrains Mono",monospace';
     cx.fillStyle=lv.color;cx.textAlign='left';
     cx.fillText(priceStr,tagX+6,y+3.5);
 
-    // Divider
-    cx.fillStyle=lv.color+'44';
+    // Thin divider
+    cx.fillStyle=lv.color+'33';
     cx.fillRect(tagX+6+pw+3,tagY+3,1,pH-6);
 
-    // Tag text
-    cx.font=(lv.strength===3?'600':'500')+' 9px "JetBrains Mono",monospace';
-    cx.fillStyle=lv.strength===3?lv.color:'#7c8db0';
-    cx.fillText(tag,tagX+pw+12,y+3.5);
+    // Plain English meaning
+    cx.font=(lv.strength===3?'500':'400')+' 9px "JetBrains Mono",monospace';
+    cx.fillStyle=lv.strength===3?'#cdd6f4':'#7c8db0';
+    cx.fillText(meaning,tagX+pw+12,y+3.5);
     cx.restore();
   });
 
