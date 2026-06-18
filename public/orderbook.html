@@ -206,9 +206,37 @@ const arrows=[];
 // ── WEBSOCKET — direct to Binance (works from HTTPS pages) ───────────────────
 let ws=null, wsReconnectDelay=2000;
 
+async function fetchHistoricCandles(){
+  // Fetch last 80 x 1m candles from Binance REST on connect — fills chart instantly
+  const urls=[
+    'https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval=1m&limit=80',
+    'https://api1.binance.com/api/v3/klines?symbol=BTCUSDT&interval=1m&limit=80',
+    'https://api2.binance.com/api/v3/klines?symbol=BTCUSDT&interval=1m&limit=80',
+    'https://api3.binance.com/api/v3/klines?symbol=BTCUSDT&interval=1m&limit=80',
+  ];
+  for(const url of urls){
+    try{
+      const r=await fetch(url,{signal:AbortSignal.timeout(6000)});
+      if(!r.ok)continue;
+      const d=await r.json();
+      if(!Array.isArray(d)||!d.length)continue;
+      ST.raw1m=d.map(k=>({t:+k[0],o:+k[1],h:+k[2],l:+k[3],c:+k[4]}));
+      // Seed volume profile from history
+      ST.raw1m.forEach(k=>addKlineVol(k));
+      resample();
+      console.log('[history] loaded',ST.raw1m.length,'candles from',url);
+      return;
+    }catch(e){console.log('[history] failed',url,e.message);}
+  }
+  console.log('[history] all sources failed — will build from stream');
+}
+
 function connectWS(){
   $('conn-dot').className='';
   $('conn-lbl').textContent='connecting…';
+
+  // Fetch historic candles immediately for instant chart fill
+  fetchHistoricCandles();
 
   // Single combined stream — book, trades, klines, ticker
   const streams=[
@@ -224,6 +252,8 @@ function connectWS(){
     $('conn-dot').className='on';
     $('conn-lbl').textContent='Live';
     wsReconnectDelay=2000;
+    // Re-fetch history on reconnect too
+    fetchHistoricCandles();
   };
 
   ws.onmessage=e=>{
