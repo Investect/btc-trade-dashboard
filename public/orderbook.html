@@ -527,44 +527,62 @@ function draw() {
   // Use ZOOM to slice candles — this is what makes candles bigger/smaller
   const candles = ST.candles.slice(-ZOOM);
 
-  // Price range
-  const prices = candles.flatMap(c=>[c.h,c.l]);
-  ST.levels.forEach(l => prices.push(l.price));
+  // Price range — based on CANDLES ONLY so they fill the chart properly
+  // Levels outside this range are drawn as edge arrows, not included in scale
+  const prices = candles.flatMap(c=>[c.h,c.l,c.o,c.c]);
   prices.push(ST.price);
-  const pMin=Math.min(...prices), pMax=Math.max(...prices);
-  const pad=(pMax-pMin)*0.08, lo=pMin-pad, hi=pMax+pad, rng=hi-lo||1;
+  const cMin=Math.min(...prices), cMax=Math.max(...prices);
+  const cRange = cMax - cMin || 20;
+  // Tight padding — 12% of candle range only
+  const pad = cRange * 0.12;
+  const lo=cMin-pad, hi=cMax+pad, rng=hi-lo||1;
   const py = p => TOP + (1-(p-lo)/rng) * chartH;
 
-  // Grid lines
-  for (let i=0; i<=5; i++) {
-    const pv=lo+rng/5*i, y=py(pv);
+  // Grid lines — 6 levels across the visible candle range
+  for (let i=0; i<=6; i++) {
+    const pv=lo+rng/6*i, y=py(pv);
     cx.beginPath(); cx.strokeStyle='#161b22'; cx.lineWidth=1; cx.setLineDash([]);
     cx.moveTo(L,y); cx.lineTo(L+chartW,y); cx.stroke();
     cx.fillStyle='#484f58'; cx.font='9px monospace'; cx.textAlign='left';
-    cx.fillText(fmt(pv), L+chartW+3, y+3);
+    cx.fillText('$'+Math.round(pv).toLocaleString('en-GB'), L+chartW+3, y+3);
   }
 
-  // Level lines
+  // Level lines — draw in-range ones fully, off-screen ones as edge arrows
   ST.levels.forEach(lv => {
     const y = py(lv.price);
-    if (y<TOP-2||y>BOT+2) return;
-    cx.save();
-    cx.setLineDash(lv.dash||[5,4]); cx.strokeStyle=lv.color;
-    cx.lineWidth = lv.strength===3 ? 1.5 : 0.8;
-    cx.globalAlpha = lv.strength===3 ? 0.9 : 0.5;
-    cx.beginPath(); cx.moveTo(L,y); cx.lineTo(L+chartW-2,y); cx.stroke();
-    cx.restore();
-    // Label tag
-    cx.save();
-    const sl = lv.label.length>26 ? lv.label.slice(0,26)+'…' : lv.label;
-    cx.font = (lv.strength===3?'bold ':'') + '8px monospace';
-    const tw = cx.measureText(sl).width + 6;
-    cx.fillStyle = lv.color+'20'; cx.strokeStyle=lv.color; cx.lineWidth=0.5; cx.setLineDash([]);
-    cx.beginPath();
-    if (cx.roundRect) cx.roundRect(L+4,y-9,tw,11,2); else cx.rect(L+4,y-9,tw,11);
-    cx.fill(); cx.stroke();
-    cx.fillStyle=lv.color; cx.textAlign='left'; cx.fillText(sl,L+7,y);
-    cx.restore();
+    const inView = y >= TOP-1 && y <= BOT+1;
+
+    if (inView) {
+      // Full line across chart
+      cx.save();
+      cx.setLineDash(lv.dash||[5,4]); cx.strokeStyle=lv.color;
+      cx.lineWidth = lv.strength===3 ? 1.5 : 0.8;
+      cx.globalAlpha = lv.strength===3 ? 0.9 : 0.5;
+      cx.beginPath(); cx.moveTo(L,y); cx.lineTo(L+chartW-2,y); cx.stroke();
+      cx.restore();
+      // Label tag
+      cx.save();
+      const sl = lv.label.length>26 ? lv.label.slice(0,26)+'…' : lv.label;
+      cx.font = (lv.strength===3?'bold ':'') + '8px monospace';
+      const tw = cx.measureText(sl).width + 6;
+      cx.fillStyle = lv.color+'20'; cx.strokeStyle=lv.color; cx.lineWidth=0.5; cx.setLineDash([]);
+      cx.beginPath();
+      if (cx.roundRect) cx.roundRect(L+4,y-9,tw,11,2); else cx.rect(L+4,y-9,tw,11);
+      cx.fill(); cx.stroke();
+      cx.fillStyle=lv.color; cx.textAlign='left'; cx.fillText(sl,L+7,y);
+      cx.restore();
+    } else if (lv.strength >= 2) {
+      // Off-screen — draw a small arrow marker at chart edge with price
+      const atTop = lv.price > hi;
+      const ey = atTop ? TOP+2 : BOT-2;
+      const arrow = atTop ? '▲' : '▼';
+      cx.save();
+      cx.globalAlpha = 0.7;
+      cx.fillStyle = lv.color;
+      cx.font = '9px monospace'; cx.textAlign = 'left';
+      cx.fillText(arrow + ' ' + fmt(lv.price) + ' ' + lv.label.slice(0,18), L+6, atTop ? ey+10 : ey-2);
+      cx.restore();
+    }
   });
 
   // Candles
