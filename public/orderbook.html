@@ -1,0 +1,600 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>BTC Liquidity Panel — Live</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%;background:#0a0e14;color:#e6edf3;font-family:'Courier New',monospace;overflow:hidden;user-select:none}
+#app{display:grid;grid-template-rows:44px 1fr 26px;height:100vh;width:100vw}
+
+/* TOP BAR */
+#topbar{background:#0d1117;border-bottom:1px solid #21262d;display:flex;align-items:center;padding:0 14px;gap:14px;flex-shrink:0}
+.tb-pair{font-size:14px;font-weight:700;color:#e6edf3;letter-spacing:.05em}
+#price-now{font-size:17px;font-weight:700;min-width:90px;transition:color .1s}
+#price-change{font-size:11px;min-width:58px}
+.tb-div{width:1px;height:22px;background:#21262d;flex-shrink:0}
+.tb-stat{display:flex;flex-direction:column;align-items:center;gap:1px}
+.tb-stat .lbl{font-size:8px;color:#484f58;text-transform:uppercase;letter-spacing:.07em}
+.tb-stat .val{font-size:11px;color:#8b949e}
+#direction-sig{margin-left:auto;font-size:10px;font-weight:700;padding:3px 12px;border-radius:3px;letter-spacing:.04em;transition:all .3s}
+.sig-short{background:#2d1a1a;color:#f85149;border:1px solid #f8514966}
+.sig-long{background:#0e2318;color:#3fb950;border:1px solid #3fb95066}
+.sig-neutral{background:#1c1f26;color:#8b949e;border:1px solid #30363d}
+#conn-wrap{display:flex;align-items:center;gap:5px;margin-left:10px}
+#conn-dot{width:7px;height:7px;border-radius:50%;background:#f85149;transition:background .3s}
+#conn-dot.on{background:#3fb950}
+#conn-lbl{font-size:9px;color:#484f58}
+
+/* MAIN */
+#main{display:grid;grid-template-columns:1fr 200px;overflow:hidden}
+
+/* CHART */
+#chart-wrap{position:relative;overflow:hidden}
+canvas{display:block}
+
+/* RIGHT SIDEBAR */
+#sidebar{display:flex;flex-direction:column;overflow:hidden;background:#0a0e14;border-left:1px solid #21262d}
+.s-sec{flex-shrink:0;border-bottom:1px solid #161b22;padding:6px 8px}
+.s-hdr{font-size:8px;color:#484f58;text-transform:uppercase;letter-spacing:.07em;margin-bottom:4px;display:flex;justify-content:space-between;align-items:center}
+
+/* LEVELS */
+#levels-wrap{flex:1;overflow-y:auto;min-height:0}
+#levels-wrap::-webkit-scrollbar{width:2px}
+#levels-wrap::-webkit-scrollbar-thumb{background:#21262d}
+.lvl{display:flex;align-items:center;gap:4px;padding:3px 8px;font-size:9px;border-left:2px solid transparent;cursor:default}
+.lvl.s3{border-left-color:inherit}
+.lvl:hover{background:#0d1117}
+.lvl-pip{width:6px;height:6px;border-radius:50%;flex-shrink:0}
+.lvl-price{min-width:52px;color:#e6edf3;font-size:10px}
+.lvl-lbl{flex:1;font-size:8px;padding:1px 4px;border-radius:2px}
+.lvl-dist{font-size:8px;color:#30363d;min-width:28px;text-align:right}
+.lvl-mid{background:#0d1f3c;padding:4px 8px;font-size:10px;color:#388bfd;font-weight:700;text-align:center;border-top:1px solid #388bfd33;border-bottom:1px solid #388bfd33;flex-shrink:0}
+.conf-dots{display:flex;gap:2px;flex-shrink:0}
+.conf-dots span{width:4px;height:4px;border-radius:1px;background:#21262d}
+
+/* TAPE */
+#tape{flex-shrink:0;height:90px;overflow:hidden;border-bottom:1px solid #161b22;padding:2px 0}
+.tape-row{display:flex;gap:6px;padding:2px 8px;font-size:9px;animation:fi .12s ease}
+@keyframes fi{from{opacity:0;transform:translateY(-3px)}to{opacity:1;transform:none}}
+.t-b{color:#3fb950;font-weight:700}.t-s{color:#f85149;font-weight:700}
+.t-pr{color:#e6edf3;min-width:52px}.t-sz{color:#484f58}.t-big{color:#d29922}
+
+/* DELTA */
+.delta-sec{padding:6px 8px;border-bottom:1px solid #161b22;flex-shrink:0}
+.delta-track{height:7px;border-radius:4px;overflow:hidden;display:flex;margin:4px 0;background:#21262d}
+.d-buy{background:#3fb950;transition:width .25s}
+.d-sell{background:#f85149;transition:width .25s}
+.delta-lbl{display:flex;justify-content:space-between;font-size:9px}
+
+/* ALERTS */
+#alerts{flex-shrink:0;max-height:100px;overflow-y:auto;padding:2px 0}
+#alerts::-webkit-scrollbar{width:2px}
+#alerts::-webkit-scrollbar-thumb{background:#21262d}
+.alert{display:flex;gap:5px;padding:3px 8px;font-size:9px;line-height:1.4;animation:fi .2s ease}
+.a-ico{flex-shrink:0}.a-msg{color:#8b949e;flex:1}.a-t{color:#30363d;flex-shrink:0;font-size:8px}
+
+/* LEGEND */
+#legend{background:#0d1117;border-top:1px solid #21262d;display:flex;align-items:center;gap:10px;padding:0 12px;font-size:8px;color:#8b949e;flex-wrap:wrap}
+.leg{display:flex;align-items:center;gap:4px}
+.leg-line{width:20px;height:2px;border-radius:1px}
+</style>
+</head>
+<body>
+<div id="app">
+
+<div id="topbar">
+  <span class="tb-pair">BTC / USD</span>
+  <span id="price-now" style="color:#3fb950">connecting…</span>
+  <span id="price-change"></span>
+  <div class="tb-div"></div>
+  <div class="tb-stat"><span class="lbl">24h high</span><span class="val" id="s-high">—</span></div>
+  <div class="tb-stat"><span class="lbl">24h low</span><span class="val" id="s-low">—</span></div>
+  <div class="tb-div"></div>
+  <div class="tb-stat"><span class="lbl">buy/sell depth</span><span class="val" id="s-depth">—</span></div>
+  <div class="tb-stat"><span class="lbl">trades/s</span><span class="val" id="s-tps">—</span></div>
+  <div class="tb-stat"><span class="lbl">signals</span><span class="val" id="s-sigs" style="color:#3fb950">0</span></div>
+  <span id="direction-sig" class="sig-neutral">NEUTRAL</span>
+  <div id="conn-wrap"><div id="conn-dot"></div><span id="conn-lbl">connecting</span></div>
+</div>
+
+<div id="main">
+  <div id="chart-wrap"><canvas id="c"></canvas></div>
+
+  <div id="sidebar">
+    <div class="s-sec" style="padding:4px 0 0">
+      <div class="s-hdr" style="padding:0 8px 4px"><span>liquidity levels</span><span id="lvl-count" style="color:#3fb950">0</span></div>
+      <div id="levels-wrap">
+        <div id="levels-list"></div>
+      </div>
+    </div>
+
+    <div class="s-sec" style="padding:4px 0">
+      <div class="s-hdr" style="padding:0 8px 2px"><span>tape</span><span style="color:#30363d">live trades</span></div>
+      <div id="tape"></div>
+    </div>
+
+    <div class="delta-sec">
+      <div class="s-hdr">delta 30s</div>
+      <div class="delta-track"><div class="d-buy" id="d-buy" style="width:50%"></div><div class="d-sell" id="d-sell" style="width:50%"></div></div>
+      <div class="delta-lbl"><span style="color:#3fb950" id="d-b-lbl">buy 50%</span><span style="color:#f85149" id="d-s-lbl">sell 50%</span></div>
+    </div>
+
+    <div class="s-sec" style="padding:4px 0;flex-shrink:0">
+      <div class="s-hdr" style="padding:0 8px 2px">alerts</div>
+      <div id="alerts"></div>
+    </div>
+  </div>
+</div>
+
+<div id="legend">
+  <div class="leg"><div class="leg-line" style="background:#f85149"></div>sell stops / ask wall</div>
+  <div class="leg"><div class="leg-line" style="background:#3fb950"></div>buy stops / bid wall</div>
+  <div class="leg"><div class="leg-line" style="background:#d29922"></div>round number</div>
+  <div class="leg"><div class="leg-line" style="background:#a371f7"></div>take profit zone</div>
+  <div class="leg"><div class="leg-line" style="background:#f0883e"></div>equal highs / lows</div>
+  <div class="leg"><div class="leg-line" style="background:#388bfd"></div>live price</div>
+  <span style="margin-left:auto;color:#30363d" id="last-tick"></span>
+</div>
+
+</div>
+
+<script>
+// ─── CONFIG ──────────────────────────────────────────────────────────────────
+const CFG = {
+  symbol    : 'btcusdt',
+  wallMinBtc: 3,       // BTC size to flag as a wall
+  wallMult  : 2.5,     // x average to highlight
+  equalTol  : 65,      // $ tolerance for equal highs/lows
+  roundInc  : 500,     // round number spacing
+  deltaWin  : 30000,   // delta window ms
+  range     : 2200,    // $ range above/below to show levels
+  candlesTF : '5m',
+  candleMax : 80,
+  tapeMax   : 40,
+  tickMs    : 100,
+};
+
+// ─── STATE ───────────────────────────────────────────────────────────────────
+const ST = {
+  price:0, prevPrice:0, high24:0, low24:0,
+  bids: new Map(), asks: new Map(),
+  trades: [], tape: [],
+  candles: [],
+  levels: [], alerts: [],
+  tpsCount:0, bookReady:false,
+  prevBids: new Map(), prevAsks: new Map(),
+};
+
+// ─── UTILS ───────────────────────────────────────────────────────────────────
+const $  = id => document.getElementById(id);
+const fmt = n  => '$' + Math.round(n).toLocaleString('en-GB');
+const fmtSmall = n => n >= 1000 ? '$' + (n/1000).toFixed(1)+'k' : '$' + Math.round(n);
+
+// ─── WEBSOCKET ───────────────────────────────────────────────────────────────
+let ws;
+function connect() {
+  const url = `wss://fstream.binance.com/stream?streams=${CFG.symbol}@depth20@100ms/${CFG.symbol}@aggTrade/${CFG.symbol}@kline_${CFG.candlesTF}/${CFG.symbol}@ticker`;
+  ws = new WebSocket(url);
+  ws.onopen    = () => { $('conn-dot').className='on'; $('conn-lbl').textContent='live'; };
+  ws.onclose   = () => { $('conn-dot').className=''; $('conn-lbl').textContent='reconnecting…'; setTimeout(connect, 1500); };
+  ws.onerror   = () => ws.close();
+  ws.onmessage = e => {
+    const msg  = JSON.parse(e.data);
+    const strm = (msg.stream || '');
+    const d    = msg.data || msg;
+    if (strm.includes('depth'))    onBook(d);
+    else if (strm.includes('aggTrade')) onTrade(d);
+    else if (strm.includes('kline'))    onKline(d);
+    else if (strm.includes('ticker'))   onTicker(d);
+    $('last-tick').textContent = new Date().toLocaleTimeString('en-GB');
+  };
+}
+
+function onBook(d) {
+  // snapshot prev for wall-pull detection
+  ST.prevBids = new Map(ST.bids);
+  ST.prevAsks = new Map(ST.asks);
+  ST.bids.clear(); ST.asks.clear();
+  (d.bids||[]).forEach(([p,q])=>ST.bids.set(+p,+q));
+  (d.asks||[]).forEach(([p,q])=>ST.asks.set(+p,+q));
+  ST.bookReady = true;
+}
+
+function onTrade(d) {
+  const price = +d.p, qty = +d.q, isSell = d.m;
+  ST.prevPrice = ST.price || price;
+  ST.price = price;
+  const now = Date.now();
+  const trade = {price, qty, isSell, t:now};
+  ST.tape.unshift(trade);
+  if (ST.tape.length > CFG.tapeMax) ST.tape.pop();
+  ST.trades.push(trade);
+  ST.trades = ST.trades.filter(t => t.t > now - CFG.deltaWin);
+  ST.tpsCount++;
+  renderTape();
+  updateTopBar();
+}
+
+function onKline(d) {
+  const k = d.k;
+  const c = {t:k.t, o:+k.o, h:+k.h, l:+k.l, c:+k.c};
+  const last = ST.candles[ST.candles.length-1];
+  if (!last || last.t !== c.t) {
+    ST.candles.push(c);
+    if (ST.candles.length > CFG.candleMax) ST.candles.shift();
+  } else {
+    ST.candles[ST.candles.length-1] = c;
+  }
+}
+
+function onTicker(d) {
+  ST.high24 = +d.h; ST.low24 = +d.l;
+  $('s-high').textContent = fmt(ST.high24);
+  $('s-low').textContent  = fmt(ST.low24);
+}
+
+// ─── TOP BAR ─────────────────────────────────────────────────────────────────
+function updateTopBar() {
+  const p = ST.price, pp = ST.prevPrice;
+  const el = $('price-now');
+  el.textContent = fmt(p);
+  el.style.color = p > pp ? '#3fb950' : p < pp ? '#f85149' : '#8b949e';
+  const chg = pp ? (p-pp)/pp*100 : 0;
+  const cel = $('price-change');
+  cel.textContent = (chg>=0?'+':'')+chg.toFixed(3)+'%';
+  cel.style.color = chg>=0?'#3fb950':'#f85149';
+}
+
+// ─── TAPE ────────────────────────────────────────────────────────────────────
+function renderTape() {
+  const el = $('tape');
+  const frag = document.createDocumentFragment();
+  ST.tape.slice(0,9).forEach(t=>{
+    const big = t.qty >= 0.5;
+    const row = document.createElement('div');
+    row.className = 'tape-row';
+    row.innerHTML =
+      `<span class="${t.isSell?'t-s':'t-b'}">${t.isSell?'S':'B'}</span>`+
+      `<span class="t-pr">${fmt(t.price)}</span>`+
+      `<span class="${big?'t-big':'t-sz'}">${t.qty.toFixed(3)}${big?' ⚡':''}</span>`;
+    frag.appendChild(row);
+  });
+  el.innerHTML=''; el.appendChild(frag);
+}
+
+// ─── DELTA ───────────────────────────────────────────────────────────────────
+function updateDelta() {
+  let bv=0, sv=0;
+  ST.trades.forEach(t=>t.isSell?sv+=t.qty:bv+=t.qty);
+  const tot = bv+sv||1;
+  const bp = Math.round(bv/tot*100), sp = 100-bp;
+  $('d-buy').style.width = bp+'%'; $('d-sell').style.width = sp+'%';
+  $('d-b-lbl').textContent = 'buy '+bp+'%';
+  $('d-s-lbl').textContent = 'sell '+sp+'%';
+
+  // Book imbalance
+  let bidT=0, askT=0;
+  ST.bids.forEach(q=>bidT+=q); ST.asks.forEach(q=>askT+=q);
+  const bookBias = bidT/(askT||1);
+  const sig = $('direction-sig');
+  if (sp>=63 && bookBias<0.8)      { sig.textContent='▼ SHORT BIAS'; sig.className='sig-short'; }
+  else if (bp>=63 && bookBias>1.25){ sig.textContent='▲ LONG BIAS'; sig.className='sig-long'; }
+  else if (sp>=55)                  { sig.textContent='▼ SELL PRESSURE'; sig.className='sig-short'; }
+  else if (bp>=55)                  { sig.textContent='▲ BUY PRESSURE'; sig.className='sig-long'; }
+  else                              { sig.textContent='NEUTRAL'; sig.className='sig-neutral'; }
+
+  // Depth
+  $('s-depth').textContent = bidT.toFixed(0)+' / '+askT.toFixed(0)+' BTC';
+}
+
+// ─── LEVELS ENGINE ───────────────────────────────────────────────────────────
+function computeLevels() {
+  if (!ST.price || !ST.bookReady) return;
+  const p = ST.price, levels = [];
+
+  // 1. ROUND NUMBERS
+  const base = Math.round(p / CFG.roundInc) * CFG.roundInc;
+  for (let i=-5; i<=5; i++) {
+    const lvl = base + i * CFG.roundInc;
+    if (Math.abs(lvl-p) < 30 || Math.abs(lvl-p) > CFG.range) continue;
+    const big = lvl % 1000 === 0;
+    levels.push({ price:lvl, type:'round', label: big?`ROUND ${fmt(lvl)}`:`ROUND ${fmt(lvl)}`,
+      color:'#d29922', strength: big?3:2, dash: big?[8,3]:[5,4], side: lvl>p?'above':'below' });
+  }
+
+  // 2. EQUAL HIGHS / EQUAL LOWS
+  if (ST.candles.length >= 8) {
+    const slice = ST.candles.slice(-50);
+    const highs=[], lows=[];
+    for (let i=2;i<slice.length-2;i++){
+      if (slice[i].h>slice[i-1].h&&slice[i].h>slice[i-2].h&&slice[i].h>slice[i+1].h&&slice[i].h>slice[i+2].h)
+        highs.push(slice[i].h);
+      if (slice[i].l<slice[i-1].l&&slice[i].l<slice[i-2].l&&slice[i].l<slice[i+1].l&&slice[i].l<slice[i+2].l)
+        lows.push(slice[i].l);
+    }
+    const cluster = (arr, side, label, color) => {
+      const used=new Set();
+      arr.forEach((v,i)=>{
+        if (used.has(i)) return;
+        const grp=[v];
+        arr.forEach((w,j)=>{ if(j!==i&&!used.has(j)&&Math.abs(v-w)<CFG.equalTol){grp.push(w);used.add(j);} });
+        if (grp.length>=2){
+          const avg=grp.reduce((a,b)=>a+b,0)/grp.length;
+          if (Math.abs(avg-p)<CFG.range&&((side==='above'&&avg>p)||(side==='below'&&avg<p)))
+            levels.push({price:avg,type:'equal',label,color,strength:3,dash:[6,3],side});
+        }
+      });
+    };
+    cluster(highs,'above','EQUAL HIGHS — STOPS ABOVE','#f0883e');
+    cluster(lows, 'below','EQUAL LOWS — STOPS BELOW', '#f0883e');
+  }
+
+  // 3. ORDER BOOK WALLS
+  const bArr=Array.from(ST.bids.entries()).sort((a,b)=>b[0]-a[0]);
+  const aArr=Array.from(ST.asks.entries()).sort((a,b)=>a[0]-b[0]);
+  const avgB = bArr.reduce((s,[,q])=>s+q,0)/(bArr.length||1);
+  const avgA = aArr.reduce((s,[,q])=>s+q,0)/(aArr.length||1);
+
+  bArr.forEach(([pr,qty])=>{
+    if (Math.abs(pr-p)>CFG.range) return;
+    if (qty>=CFG.wallMinBtc && qty>avgB*CFG.wallMult)
+      levels.push({price:pr,type:'bidwall',label:`BID WALL ${qty.toFixed(1)} BTC`,
+        color:'#3fb950',strength:qty>avgB*5?3:2,dash:[4,4],side:'below'});
+  });
+  aArr.forEach(([pr,qty])=>{
+    if (Math.abs(pr-p)>CFG.range) return;
+    if (qty>=CFG.wallMinBtc && qty>avgA*CFG.wallMult)
+      levels.push({price:pr,type:'askwall',label:`ASK WALL ${qty.toFixed(1)} BTC`,
+        color:'#f85149',strength:qty>avgA*5?3:2,dash:[4,4],side:'above'});
+  });
+
+  // 4. STOP CLUSTERS — inferred just beyond equal levels + round numbers
+  levels.filter(l=>l.strength===3).forEach(l=>{
+    const offset = l.side==='above' ? 120 : -120;
+    const tpOff  = l.side==='above' ? 300 : -300;
+    if (Math.abs(l.price+offset-p)<CFG.range)
+      levels.push({price:l.price+offset,type:'stop',
+        label:l.side==='above'?'STOP CLUSTER — LONGS STOPPED':'STOP CLUSTER — SHORTS STOPPED',
+        color:l.side==='above'?'#f85149':'#3fb950',strength:2,dash:[6,3],side:l.side});
+    if (Math.abs(l.price+tpOff-p)<CFG.range)
+      levels.push({price:l.price+tpOff,type:'tp',label:'TAKE PROFIT ZONE',
+        color:'#a371f7',strength:2,dash:[3,5],side:l.side});
+  });
+
+  // Sort, dedupe
+  levels.sort((a,b)=>b.price-a.price);
+  const deduped=[];
+  levels.forEach(l=>{
+    if (!deduped.some(d=>Math.abs(d.price-l.price)<50&&d.type===l.type)) deduped.push(l);
+  });
+  ST.levels = deduped;
+  $('s-sigs').textContent = deduped.length;
+}
+
+// ─── WALL PULL DETECTION ─────────────────────────────────────────────────────
+const alertCD = new Map();
+function fireAlert(icon,msg,color){
+  const key=msg.slice(0,28);
+  if(alertCD.has(key)&&Date.now()-alertCD.get(key)<9000)return;
+  alertCD.set(key,Date.now());
+  const t=new Date().toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
+  const el=document.createElement('div');
+  el.className='alert';
+  el.innerHTML=`<span class="a-ico" style="color:${color}">${icon}</span><span class="a-msg">${msg}</span><span class="a-t">${t}</span>`;
+  const list=$('alerts');
+  list.prepend(el);
+  if(list.children.length>14)list.lastChild.remove();
+}
+
+function checkWallPulls(){
+  ST.prevAsks.forEach((qty,pr)=>{
+    const now=ST.asks.get(pr)||0;
+    if(qty>=CFG.wallMinBtc&&now<qty*0.35)
+      fireAlert('⚡',`Ask wall pulled ${fmt(pr)} — ${qty.toFixed(1)} BTC gone`,'#d29922');
+  });
+  ST.prevBids.forEach((qty,pr)=>{
+    const now=ST.bids.get(pr)||0;
+    if(qty>=CFG.wallMinBtc&&now<qty*0.35)
+      fireAlert('⚡',`Bid wall pulled ${fmt(pr)} — ${qty.toFixed(1)} BTC gone`,'#d29922');
+  });
+}
+
+function checkProximity(){
+  const p=ST.price;
+  ST.levels.forEach(l=>{
+    const dist=Math.abs(l.price-p);
+    if(dist<100&&dist>8&&l.strength>=2)
+      fireAlert('→',`Approaching ${l.label} at ${fmt(l.price)}`,l.color);
+  });
+}
+
+// ─── LEVELS SIDEBAR RENDER ───────────────────────────────────────────────────
+function renderLevels(){
+  const list=$('levels-list'), p=ST.price;
+  const frag=document.createDocumentFragment();
+  let mid=false;
+  ST.levels.forEach(lv=>{
+    if(!mid&&lv.price<p){
+      mid=true;
+      const m=document.createElement('div');
+      m.className='lvl-mid';
+      m.textContent='▶ '+fmt(p)+' NOW';
+      frag.appendChild(m);
+    }
+    const row=document.createElement('div');
+    row.className='lvl'+(lv.strength===3?' s3':'');
+    row.style.color=lv.color;
+    const dist=Math.abs(lv.price-p);
+    const conf=document.createElement('div');
+    conf.className='conf-dots';
+    conf.style.color=lv.color;
+    for(let i=0;i<3;i++){const s=document.createElement('span');if(i<lv.strength)s.className='on';conf.appendChild(s);}
+    row.innerHTML=
+      `<div class="lvl-pip" style="background:${lv.color}"></div>`+
+      `<span class="lvl-price">${fmt(lv.price)}</span>`+
+      `<span class="lvl-lbl" style="background:${lv.color}18;color:${lv.color}">${lv.label}</span>`+
+      `<span class="lvl-dist">${fmtSmall(dist)}</span>`;
+    row.appendChild(conf);
+    frag.appendChild(row);
+  });
+  if(!mid){
+    const m=document.createElement('div');
+    m.className='lvl-mid';
+    m.textContent='▶ '+fmt(p)+' NOW';
+    frag.appendChild(m);
+  }
+  list.innerHTML=''; list.appendChild(frag);
+  $('lvl-count').textContent=ST.levels.length;
+}
+
+// ─── CANVAS CHART ────────────────────────────────────────────────────────────
+const cv=$('c'), cx=cv.getContext('2d');
+let DPR=devicePixelRatio||1;
+
+function resize(){
+  const wrap=$('chart-wrap');
+  DPR=devicePixelRatio||1;
+  cv.width=wrap.offsetWidth*DPR;
+  cv.height=wrap.offsetHeight*DPR;
+  cv.style.width=wrap.offsetWidth+'px';
+  cv.style.height=wrap.offsetHeight+'px';
+}
+
+function draw(){
+  const W=cv.width/DPR, H=cv.height/DPR;
+  cx.clearRect(0,0,cv.width,cv.height);
+  cx.setTransform(DPR,0,0,DPR,0,0);
+
+  if(!ST.price||ST.candles.length<3){
+    cx.fillStyle='#484f58'; cx.font='12px monospace';
+    cx.textAlign='center';
+    cx.fillText('Connecting to Binance live feed…',W/2,H/2);
+    return;
+  }
+
+  const PW=70, L=6, chartW=W-PW-L, TOP=10, BOT=H-18, chartH=BOT-TOP;
+  const candles=ST.candles.slice(-70);
+
+  // Price range
+  const prices=candles.flatMap(c=>[c.h,c.l]);
+  ST.levels.forEach(l=>prices.push(l.price));
+  prices.push(ST.price);
+  const pMin=Math.min(...prices), pMax=Math.max(...prices);
+  const pad=(pMax-pMin)*0.07;
+  const lo=pMin-pad, hi=pMax+pad, rng=hi-lo||1;
+  const py=p=>TOP+(1-(p-lo)/rng)*chartH;
+
+  // Grid
+  cx.setLineDash([]);
+  for(let i=0;i<=5;i++){
+    const pv=lo+rng/5*i, y=py(pv);
+    cx.beginPath(); cx.strokeStyle='#161b22'; cx.lineWidth=1;
+    cx.moveTo(L,y); cx.lineTo(L+chartW,y); cx.stroke();
+    cx.fillStyle='#484f58'; cx.font='9px monospace'; cx.textAlign='left';
+    cx.fillText(fmt(pv),L+chartW+3,y+3);
+  }
+
+  // Level lines
+  ST.levels.forEach(lv=>{
+    const y=py(lv.price);
+    if(y<TOP-2||y>BOT+2)return;
+    cx.save();
+    cx.setLineDash(lv.dash||[5,4]);
+    cx.strokeStyle=lv.color;
+    cx.lineWidth=lv.strength===3?1.5:0.8;
+    cx.globalAlpha=lv.strength===3?0.9:0.5;
+    cx.beginPath(); cx.moveTo(L,y); cx.lineTo(L+chartW-2,y); cx.stroke();
+    cx.restore();
+
+    // Label
+    cx.save();
+    const shortLbl=lv.label.length>22?lv.label.slice(0,22)+'…':lv.label;
+    cx.font=(lv.strength===3?'bold ':'')+'8px monospace';
+    const tw=cx.measureText(shortLbl).width+6;
+    cx.fillStyle=lv.color+'20';
+    cx.strokeStyle=lv.color;
+    cx.lineWidth=0.5;
+    cx.setLineDash([]);
+    cx.beginPath();
+    if(cx.roundRect) cx.roundRect(L+4,y-9,tw,11,2);
+    else cx.rect(L+4,y-9,tw,11);
+    cx.fill(); cx.stroke();
+    cx.fillStyle=lv.color;
+    cx.textAlign='left';
+    cx.fillText(shortLbl,L+7,y);
+    cx.restore();
+  });
+
+  // Candles
+  const sp=chartW/candles.length, bw=Math.max(2,sp*0.65);
+  candles.forEach((c,i)=>{
+    const x=L+i*sp+sp/2;
+    const bull=c.c>=c.o, col=bull?'#3fb950':'#f85149';
+    const oY=py(c.o),cY=py(c.c),hY=py(c.h),lY=py(c.l);
+    cx.beginPath(); cx.strokeStyle=col; cx.lineWidth=1; cx.setLineDash([]);
+    cx.moveTo(x,hY); cx.lineTo(x,lY); cx.stroke();
+    const top=Math.min(oY,cY), ht=Math.max(Math.abs(cY-oY),2);
+    cx.fillStyle=bull?'#1a3a1a':'#2d1a1a';
+    cx.strokeStyle=col; cx.lineWidth=0.8;
+    cx.fillRect(x-bw/2,top,bw,ht);
+    cx.strokeRect(x-bw/2,top,bw,ht);
+  });
+
+  // Live price line
+  const nowY=py(ST.price);
+  cx.save();
+  cx.setLineDash([]);
+  cx.strokeStyle='#388bfd'; cx.lineWidth=1.5;
+  cx.beginPath(); cx.moveTo(L,nowY); cx.lineTo(L+chartW,nowY); cx.stroke();
+  const ptxt=fmt(ST.price);
+  cx.font='bold 10px monospace';
+  const ptw=cx.measureText(ptxt).width+10;
+  cx.fillStyle='#388bfd';
+  cx.beginPath();
+  if(cx.roundRect) cx.roundRect(L+chartW+1,nowY-8,ptw,16,3);
+  else cx.rect(L+chartW+1,nowY-8,ptw,16);
+  cx.fill();
+  cx.fillStyle='#fff'; cx.textAlign='left';
+  cx.fillText(ptxt,L+chartW+6,nowY+4);
+  cx.restore();
+
+  // Bid/ask depth strip at bottom
+  let bT=0,aT=0;
+  ST.bids.forEach(q=>bT+=q); ST.asks.forEach(q=>aT+=q);
+  const tot=bT+aT||1;
+  cx.fillStyle='#3fb95030'; cx.fillRect(L,BOT,bT/tot*chartW,5);
+  cx.fillStyle='#f8514930'; cx.fillRect(L+bT/tot*chartW,BOT,aT/tot*chartW,5);
+
+  // X-axis times
+  const step=Math.max(1,Math.floor(candles.length/7));
+  candles.forEach((c,i)=>{
+    if(i%step!==0)return;
+    const x=L+i*sp+sp/2, t=new Date(c.t);
+    cx.fillStyle='#484f58'; cx.font='8px monospace'; cx.textAlign='center';
+    cx.fillText(t.getHours().toString().padStart(2,'0')+':'+t.getMinutes().toString().padStart(2,'0'),x,H-4);
+  });
+}
+
+// ─── TPS COUNTER ─────────────────────────────────────────────────────────────
+setInterval(()=>{ $('s-tps').textContent=ST.tpsCount; ST.tpsCount=0; },1000);
+
+// ─── MAIN TICK — 100ms ───────────────────────────────────────────────────────
+function tick(){
+  computeLevels();
+  checkWallPulls();
+  checkProximity();
+  updateDelta();
+  renderLevels();
+  draw();
+}
+
+// ─── BOOT ────────────────────────────────────────────────────────────────────
+window.addEventListener('resize',()=>{ resize(); draw(); });
+resize();
+connect();
+setInterval(tick, CFG.tickMs);
+</script>
+</body>
+</html>
