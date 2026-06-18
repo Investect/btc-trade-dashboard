@@ -547,15 +547,20 @@ app.get('/api/ob/trades', async (req, res) => {
 });
 
 app.get('/api/ob/klines', async (req, res) => {
-  try {
-    const r = await fetch('https://fapi.binance.com/fapi/v1/klines?symbol=BTCUSDT&interval=5m&limit=80', {
-      signal: AbortSignal.timeout(5000)
-    });
-    const d = await r.json();
-    res.json({ candles: d || [] });
-  } catch(e) {
-    res.status(500).json({ error: e.message });
+  const urls = [
+    'https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval=5m&limit=80',
+    'https://api1.binance.com/api/v3/klines?symbol=BTCUSDT&interval=5m&limit=80',
+    'https://fapi.binance.com/fapi/v1/klines?symbol=BTCUSDT&interval=5m&limit=80',
+  ];
+  for (const url of urls) {
+    try {
+      const r = await fetch(url, { signal: AbortSignal.timeout(5000) });
+      if (!r.ok) continue;
+      const d = await r.json();
+      if (Array.isArray(d) && d.length > 0) return res.json({ candles: d });
+    } catch(e) { continue; }
   }
+  res.status(500).json({ error: 'All kline sources failed' });
 });
 
 // ─── START ───────────────────────────────────────────────────────────────────
