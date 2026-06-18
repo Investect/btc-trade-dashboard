@@ -165,7 +165,8 @@ canvas{display:block;width:100%;height:100%}
   <div class="leg"><div class="leg-line" style="background:#3b82f6"></div>Live price</div>
   <div class="leg"><div style="width:10px;height:8px;background:#15803d;border-radius:1px;margin-right:2px"></div>Vol bull</div>
   <div class="leg"><div style="width:10px;height:8px;background:#b91c1c;border-radius:1px;margin-right:2px"></div>Vol bear</div>
-  <div class="leg"><div style="width:10px;height:8px;background:#fbbf2440;border:1px solid #fbbf24;border-radius:1px;margin-right:2px"></div>Sweep zone</div>
+  <div class="leg"><div style="width:10px;height:8px;background:#fbbf2440;border:1px solid #fbbf24;border-radius:1px;margin-right:2px"></div>Sweep ▲</div>
+  <div class="leg"><div style="width:10px;height:8px;background:#38bdf840;border:1px solid #38bdf8;border-radius:1px;margin-right:2px"></div>Sweep ▼</div>
   <div class="leg" style="margin-left:auto"><div style="width:9px;height:9px;background:#ef4444;border-radius:50%;margin-right:4px"></div>Short signal</div>
   <span style="color:#334155;font-size:9px;margin-left:10px" id="last-tick"></span>
 </div>
@@ -562,79 +563,97 @@ function draw(){
     cx.restore();
   });
 
-  // ── LEVEL LINES ──────────────────────────────────────────────────────────
+  // ── LEVEL LINES ONLY (drawn before candles) ─────────────────────────────
   ST.levels.forEach(lv=>{
     const y=py(lv.price);
-    const inView=y>=TOP-1&&y<=BOT+1;
-    if(inView){
-      // Line
-      cx.save();cx.setLineDash(lv.dash||[5,4]);cx.strokeStyle=lv.color;
-      cx.lineWidth=lv.strength===3?1.8:1;cx.globalAlpha=lv.strength===3?.85:.4;
-      cx.beginPath();cx.moveTo(L,y);cx.lineTo(L+chartW,y);cx.stroke();cx.restore();
-
-      // ── RICH PILL LABEL ──────────────────────────────────────────────────
-      cx.save();
-      const pillText=lv.pill||lv.label;
-      // Truncate for display but keep informative
-      const maxChars=44;
-      const displayText=pillText.length>maxChars?pillText.slice(0,maxChars)+'…':pillText;
-      cx.font='bold 10px -apple-system,sans-serif';
-      const tw=cx.measureText(displayText).width;
-      const pH=16,pW=tw+14,pX=L+8,pY=y-pH/2;
-
-      // Pill background — slightly opaque for readability
-      cx.fillStyle=lv.color+'22';
-      cx.strokeStyle=lv.color;cx.lineWidth=lv.strength===3?1.2:.6;cx.setLineDash([]);
-      cx.beginPath();rr(pX,pY,pW,pH,4);cx.fill();cx.stroke();
-
-      // Strength indicator dot
-      cx.fillStyle=lv.color;
-      cx.beginPath();cx.arc(pX+6,y,3,0,Math.PI*2);cx.fill();
-
-      // Text
-      cx.fillStyle='#e2e8f0';cx.textAlign='left';cx.font='bold 10px -apple-system,sans-serif';
-      cx.fillText(displayText,pX+13,y+4);
-      cx.restore();
-    } else if(lv.strength===3){
-      const atTop=lv.price>hi,ey=atTop?TOP+4:BOT-4;
-      cx.save();cx.globalAlpha=.7;cx.fillStyle=lv.color;
-      cx.font='bold 9px -apple-system,sans-serif';cx.textAlign='left';
-      cx.fillText((atTop?'▲ ':'▼ ')+fmt(lv.price)+'  '+lv.label.slice(0,22),L+6,atTop?ey+11:ey-2);
-      cx.restore();
+    if(y<TOP-1||y>BOT+1){
+      if(lv.strength===3){
+        const atTop=lv.price>hi,ey=atTop?TOP+4:BOT-4;
+        cx.save();cx.globalAlpha=.7;cx.fillStyle=lv.color;
+        cx.font='bold 9px -apple-system,sans-serif';cx.textAlign='left';
+        cx.fillText((atTop?'▲ ':'▼ ')+fmt(lv.price)+'  '+lv.label.slice(0,22),L+6,atTop?ey+11:ey-2);
+        cx.restore();
+      }
+      return;
     }
+    cx.save();cx.setLineDash(lv.dash||[5,4]);cx.strokeStyle=lv.color;
+    cx.lineWidth=lv.strength===3?1.8:1;cx.globalAlpha=lv.strength===3?.85:.4;
+    cx.beginPath();cx.moveTo(L,y);cx.lineTo(L+chartW,y);cx.stroke();cx.restore();
   });
 
-  // ── CANDLES ──────────────────────────────────────────────────────────────
+  // ── CANDLES — transparent body, solid border+wick ────────────────────────
   candles.forEach((c,i)=>{
     const x=L+i*sp+sp/2,bull=c.c>=c.o;
-    const col=bull?'#22c55e':'#ef4444',bodyCol=bull?'#15803d':'#b91c1c';
+    const col=bull?'#22c55e':'#ef4444',bodyFill=bull?'#22c55e18':'#ef444418';
     const oY=py(c.o),cY=py(c.c),hY=py(c.h),lY=py(c.l);
+    // Wick
     cx.beginPath();cx.strokeStyle=col;cx.lineWidth=1.2;cx.setLineDash([]);
     cx.moveTo(x,hY);cx.lineTo(x,lY);cx.stroke();
+    // Body — transparent fill, solid border
     const top=Math.min(oY,cY),ht=Math.max(Math.abs(cY-oY),2);
-    cx.fillStyle=bodyCol;cx.fillRect(x-bw/2,top,bw,ht);
-    cx.strokeStyle=col;cx.lineWidth=1;cx.strokeRect(x-bw/2,top,bw,ht);
+    cx.fillStyle=bodyFill;cx.fillRect(x-bw/2,top,bw,ht);
+    cx.strokeStyle=col;cx.lineWidth=1.5;cx.strokeRect(x-bw/2,top,bw,ht);
 
-    // ── HIGH VOLUME CANDLE MARKER — mark sweeps ───────────────────────────
-    // Check if this candle has a long wick relative to body (sweep indicator)
+    // ── SWEEP MARKERS — yellow upper, blue lower ─────────────────────────
     const bodySize=Math.abs(c.c-c.o);
     const upperWick=c.h-Math.max(c.o,c.c);
     const lowerWick=Math.min(c.o,c.c)-c.l;
     const wickThresh=bodySize*2.5;
     if(upperWick>wickThresh&&upperWick>cRng*0.015){
-      // Long upper wick = bearish sweep / liquidity grab above
-      cx.save();cx.fillStyle='#ef444488';
-      cx.beginPath();rr(x-bw/2-1,hY,bw+2,upperWick*.6,2);cx.fill();
-      cx.fillStyle='#fca5a8';cx.font='bold 9px -apple-system,sans-serif';cx.textAlign='center';
-      cx.fillText('SWEEP↑',x,hY-3);cx.restore();
+      cx.save();
+      cx.fillStyle='#fbbf2422';
+      cx.beginPath();rr(x-bw/2-1,hY,bw+2,upperWick*.7,2);cx.fill();
+      cx.strokeStyle='#fbbf2488';cx.lineWidth=1;cx.setLineDash([]);cx.stroke();
+      cx.fillStyle='#fbbf24';cx.font='bold 8px -apple-system,sans-serif';cx.textAlign='center';
+      cx.fillText('▲ SWEEP',x,hY-4);cx.restore();
     }
     if(lowerWick>wickThresh&&lowerWick>cRng*0.015){
-      // Long lower wick = bullish sweep / liquidity grab below
-      cx.save();cx.fillStyle='#22c55e55';
-      cx.beginPath();rr(x-bw/2-1,lY+lowerWick*.4,bw+2,lowerWick*.6,2);cx.fill();
-      cx.fillStyle='#86efac';cx.font='bold 9px -apple-system,sans-serif';cx.textAlign='center';
-      cx.fillText('SWEEP↓',x,lY+lowerWick+12);cx.restore();
+      cx.save();
+      cx.fillStyle='#38bdf822';
+      cx.beginPath();rr(x-bw/2-1,lY+lowerWick*.3,bw+2,lowerWick*.7,2);cx.fill();
+      cx.strokeStyle='#38bdf888';cx.lineWidth=1;cx.setLineDash([]);cx.stroke();
+      cx.fillStyle='#38bdf8';cx.font='bold 8px -apple-system,sans-serif';cx.textAlign='center';
+      cx.fillText('▼ SWEEP',x,lY+lowerWick+11);cx.restore();
     }
+  });
+
+  // ── PILL LABELS — drawn AFTER candles so they sit on top ────────────────
+  ST.levels.forEach(lv=>{
+    const y=py(lv.price);
+    if(y<TOP-1||y>BOT+1)return;
+    cx.save();
+    // Short clear label — type tag + price + one-line trade hint
+    const hints={
+      'equal':  lv.side==='above'? '↑ SWEEP TARGET — short on rejection' : '↓ SWEEP TARGET — bounce expected',
+      'round':  lv.strength===3  ? '⚡ ROUND — stop magnet, expect sweep' : '· ROUND — minor stop cluster',
+      'bidwall':'▲ BID WALL — support. Don't short below.',
+      'askwall':'▼ ASK WALL — resistance. Short on rejection.',
+      'stop':   lv.side==='above'? '▼ LONGS STOPPED — sell cascade zone' : '▲ SHORTS STOPPED — buy surge zone',
+      'tp':     lv.side==='above'? '◆ TP ZONE — longs exiting, sell pressure' : '◆ TP ZONE — shorts covering, buy pressure',
+    };
+    const hint=hints[lv.type]||lv.label;
+    const priceTag=fmt(lv.price);
+    cx.font='600 10px -apple-system,sans-serif';
+    const priceTW=cx.measureText(priceTag).width;
+    cx.font='500 9.5px -apple-system,sans-serif';
+    const hintTW=cx.measureText(hint).width;
+    const totalW=8+priceTW+8+hintTW+10;
+    const pH=17,pX=L+8,pY=y-pH/2;
+    // Pill BG — solid, fully opaque so it covers candles
+    cx.fillStyle='#0d1421ee';
+    cx.strokeStyle=lv.color;cx.lineWidth=lv.strength===3?1.5:0.8;cx.setLineDash([]);
+    cx.beginPath();rr(pX,pY,totalW,pH,5);cx.fill();cx.stroke();
+    // Coloured left accent bar
+    cx.fillStyle=lv.color;cx.fillRect(pX,pY,3,pH);
+    // Price — bold coloured
+    cx.font='700 10px -apple-system,sans-serif';cx.fillStyle=lv.color;cx.textAlign='left';
+    cx.fillText(priceTag,pX+8,y+3.5);
+    // Separator
+    cx.fillStyle='#1e2d42';cx.fillRect(pX+8+priceTW+4,pY+3,1,pH-6);
+    // Hint — white
+    cx.font='500 9.5px -apple-system,sans-serif';cx.fillStyle='#cbd5e1';
+    cx.fillText(hint,pX+8+priceTW+10,y+3.5);
+    cx.restore();
   });
 
   // ── SHORT ENTRY ARROWS (on top of candles) ───────────────────────────────
