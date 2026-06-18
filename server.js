@@ -547,10 +547,12 @@ app.get('/api/ob/trades', async (req, res) => {
 });
 
 app.get('/api/ob/klines', async (req, res) => {
+  const interval = ['1m','5m','15m'].includes(req.query.interval) ? req.query.interval : '5m';
+  const limit = interval === '1m' ? 80 : 80;
   const urls = [
-    'https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval=5m&limit=80',
-    'https://api1.binance.com/api/v3/klines?symbol=BTCUSDT&interval=5m&limit=80',
-    'https://fapi.binance.com/fapi/v1/klines?symbol=BTCUSDT&interval=5m&limit=80',
+    `https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval=${interval}&limit=${limit}`,
+    `https://api1.binance.com/api/v3/klines?symbol=BTCUSDT&interval=${interval}&limit=${limit}`,
+    `https://fapi.binance.com/fapi/v1/klines?symbol=BTCUSDT&interval=${interval}&limit=${limit}`,
   ];
   for (const url of urls) {
     try {
@@ -562,6 +564,14 @@ app.get('/api/ob/klines', async (req, res) => {
   }
   res.status(500).json({ error: 'All kline sources failed' });
 });
+
+// ─── KEEP-ALIVE PING ─────────────────────────────────────────────────────────
+// Pings Binance every 4 minutes to keep Render from spinning down
+setInterval(async () => {
+  try {
+    await fetch('https://api.binance.com/api/v3/ping', { signal: AbortSignal.timeout(3000) });
+  } catch(e) {}
+}, 4 * 60 * 1000);
 
 // ─── START ───────────────────────────────────────────────────────────────────
 app.listen(PORT, () => console.log(`BTC Trade Dashboard → http://localhost:${PORT}`));
