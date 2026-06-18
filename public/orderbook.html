@@ -8,22 +8,28 @@
 *{box-sizing:border-box;margin:0;padding:0}
 html,body{height:100%;background:#0a0e14;color:#e6edf3;font-family:'Courier New',monospace;overflow:hidden;user-select:none}
 #app{display:grid;grid-template-rows:44px 1fr 26px;height:100vh;width:100vw}
-#topbar{background:#0d1117;border-bottom:1px solid #21262d;display:flex;align-items:center;padding:0 14px;gap:14px;flex-shrink:0;flex-wrap:wrap}
-.tb-pair{font-size:14px;font-weight:700;color:#e6edf3;letter-spacing:.05em}
-#price-now{font-size:17px;font-weight:700;min-width:90px;transition:color .1s}
-#price-change{font-size:11px;min-width:58px}
+#topbar{background:#0d1117;border-bottom:1px solid #21262d;display:flex;align-items:center;padding:0 10px;gap:10px;flex-shrink:0}
+.tb-pair{font-size:14px;font-weight:700;color:#e6edf3;letter-spacing:.05em;white-space:nowrap}
+#price-now{font-size:17px;font-weight:700;min-width:90px;transition:color .1s;white-space:nowrap}
+#price-change{font-size:11px;min-width:52px;white-space:nowrap}
 .tb-div{width:1px;height:22px;background:#21262d;flex-shrink:0}
-.tb-stat{display:flex;flex-direction:column;align-items:center;gap:1px}
-.tb-stat .lbl{font-size:8px;color:#484f58;text-transform:uppercase;letter-spacing:.07em}
-.tb-stat .val{font-size:11px;color:#8b949e}
-#direction-sig{margin-left:auto;font-size:10px;font-weight:700;padding:3px 12px;border-radius:3px;letter-spacing:.04em;transition:all .3s}
+.tb-stat{display:flex;flex-direction:column;align-items:center;gap:1px;flex-shrink:0}
+.tb-stat .lbl{font-size:8px;color:#484f58;text-transform:uppercase;letter-spacing:.07em;white-space:nowrap}
+.tb-stat .val{font-size:11px;color:#8b949e;white-space:nowrap}
+#tf-wrap{display:flex;gap:3px;flex-shrink:0}
+.tf-btn{font-size:9px;padding:2px 7px;border-radius:3px;border:1px solid #30363d;background:transparent;color:#8b949e;cursor:pointer;font-family:'Courier New',monospace;transition:all .15s}
+.tf-btn:hover{background:#21262d;color:#e6edf3}
+.tf-btn.active{background:#21262d;color:#e6edf3;border-color:#484f58}
+#direction-sig{font-size:10px;font-weight:700;padding:3px 10px;border-radius:3px;letter-spacing:.04em;transition:all .3s;white-space:nowrap;flex-shrink:0}
 .sig-short{background:#2d1a1a;color:#f85149;border:1px solid #f8514966}
 .sig-long{background:#0e2318;color:#3fb950;border:1px solid #3fb95066}
 .sig-neutral{background:#1c1f26;color:#8b949e;border:1px solid #30363d}
-#conn-wrap{display:flex;align-items:center;gap:5px}
-#conn-dot{width:7px;height:7px;border-radius:50%;background:#f85149;transition:background .3s}
+#sound-btn{font-size:9px;padding:2px 8px;border-radius:3px;border:1px solid #30363d;background:transparent;color:#484f58;cursor:pointer;font-family:'Courier New',monospace;flex-shrink:0;transition:all .15s}
+#sound-btn.on{color:#3fb950;border-color:#3fb95066}
+#conn-wrap{display:flex;align-items:center;gap:4px;margin-left:auto;flex-shrink:0}
+#conn-dot{width:7px;height:7px;border-radius:50%;background:#f85149;transition:background .3s;flex-shrink:0}
 #conn-dot.on{background:#3fb950}
-#conn-lbl{font-size:9px;color:#484f58}
+#conn-lbl{font-size:9px;color:#484f58;white-space:nowrap}
 #main{display:grid;grid-template-columns:1fr 210px;overflow:hidden}
 #chart-wrap{position:relative;overflow:hidden}
 canvas{display:block}
@@ -44,7 +50,7 @@ canvas{display:block}
 .conf-dots{display:flex;gap:2px;flex-shrink:0}
 .conf-dots span{width:4px;height:4px;border-radius:1px;background:#21262d}
 .conf-dots span.on{background:currentColor}
-#tape-box{flex-shrink:0;height:95px;overflow:hidden;border-bottom:1px solid #161b22;padding:2px 0}
+#tape-box{flex-shrink:0;height:90px;overflow:hidden;border-bottom:1px solid #161b22;padding:2px 0}
 .tape-row{display:flex;gap:6px;padding:2px 8px;font-size:9px;animation:fi .12s ease}
 @keyframes fi{from{opacity:0;transform:translateY(-3px)}to{opacity:1}}
 .t-b{color:#3fb950;font-weight:700}.t-s{color:#f85149;font-weight:700}
@@ -54,21 +60,35 @@ canvas{display:block}
 .d-buy{background:#3fb950;transition:width .25s}
 .d-sell{background:#f85149;transition:width .25s}
 .delta-lbl{display:flex;justify-content:space-between;font-size:9px}
-#alerts-box{flex-shrink:0;max-height:105px;overflow-y:auto;padding:2px 0}
+#alerts-box{flex-shrink:0;max-height:100px;overflow-y:auto;padding:2px 0}
 #alerts-box::-webkit-scrollbar{width:2px}
 .alert{display:flex;gap:5px;padding:3px 8px;font-size:9px;line-height:1.4;animation:fi .2s ease}
 .a-ico{flex-shrink:0}.a-msg{color:#8b949e;flex:1}.a-t{color:#30363d;font-size:8px;flex-shrink:0}
-#legend{background:#0d1117;border-top:1px solid #21262d;display:flex;align-items:center;gap:10px;padding:0 12px;font-size:8px;color:#8b949e;overflow:hidden}
+#legend{background:#0d1117;border-top:1px solid #21262d;display:flex;align-items:center;gap:8px;padding:0 10px;font-size:8px;color:#8b949e;overflow:hidden}
 .leg{display:flex;align-items:center;gap:4px;white-space:nowrap}
-.leg-line{width:20px;height:2px;border-radius:1px}
+.leg-line{width:16px;height:2px;border-radius:1px}
+/* Short entry flash overlay on chart */
+#entry-flash{position:absolute;top:0;left:0;right:0;bottom:0;pointer-events:none;opacity:0;background:radial-gradient(ellipse at center, #f8514918 0%, transparent 70%);transition:opacity .3s}
+#entry-flash.show{opacity:1}
+/* Entry signal banner */
+#signal-banner{position:absolute;top:8px;left:50%;transform:translateX(-50%);background:#f85149;color:#fff;font-size:10px;font-weight:700;padding:4px 14px;border-radius:3px;letter-spacing:.05em;opacity:0;transition:opacity .3s;pointer-events:none;white-space:nowrap;z-index:10}
+#signal-banner.show{opacity:1}
 </style>
 </head>
 <body>
 <div id="app">
 <div id="topbar">
-  <span class="tb-pair">BTC / USD</span>
+  <span class="tb-pair">BTC/USD</span>
   <span id="price-now" style="color:#3fb950">—</span>
   <span id="price-change"></span>
+  <div class="tb-div"></div>
+  <div id="tf-wrap">
+    <button class="tf-btn" data-tf="15s">15s</button>
+    <button class="tf-btn" data-tf="30s">30s</button>
+    <button class="tf-btn" data-tf="1m">1m</button>
+    <button class="tf-btn active" data-tf="5m">5m</button>
+    <button class="tf-btn" data-tf="15m">15m</button>
+  </div>
   <div class="tb-div"></div>
   <div class="tb-stat"><span class="lbl">24h high</span><span class="val" id="s-high">—</span></div>
   <div class="tb-stat"><span class="lbl">24h low</span><span class="val" id="s-low">—</span></div>
@@ -76,12 +96,18 @@ canvas{display:block}
   <div class="tb-stat"><span class="lbl">depth</span><span class="val" id="s-depth">—</span></div>
   <div class="tb-stat"><span class="lbl">trades/s</span><span class="val" id="s-tps">—</span></div>
   <div class="tb-stat"><span class="lbl">signals</span><span class="val" id="s-sigs" style="color:#3fb950">0</span></div>
+  <div class="tb-div"></div>
   <span id="direction-sig" class="sig-neutral">NEUTRAL</span>
+  <button id="sound-btn" title="Toggle sound alerts">🔇 sound</button>
   <div id="conn-wrap"><div id="conn-dot"></div><span id="conn-lbl">connecting…</span></div>
 </div>
 
 <div id="main">
-  <div id="chart-wrap"><canvas id="c"></canvas></div>
+  <div id="chart-wrap">
+    <canvas id="c"></canvas>
+    <div id="entry-flash"></div>
+    <div id="signal-banner"></div>
+  </div>
   <div id="sidebar">
     <div class="s-sec" style="padding:4px 0 0">
       <div class="s-hdr" style="padding:0 8px 4px"><span>liquidity levels</span><span id="lvl-count" style="color:#3fb950">0</span></div>
@@ -107,65 +133,148 @@ canvas{display:block}
   <div class="leg"><div class="leg-line" style="background:#f85149"></div>sell stops/ask wall</div>
   <div class="leg"><div class="leg-line" style="background:#3fb950"></div>buy stops/bid wall</div>
   <div class="leg"><div class="leg-line" style="background:#d29922"></div>round number</div>
-  <div class="leg"><div class="leg-line" style="background:#a371f7"></div>take profit zone</div>
+  <div class="leg"><div class="leg-line" style="background:#a371f7"></div>take profit</div>
   <div class="leg"><div class="leg-line" style="background:#f0883e"></div>equal highs/lows</div>
   <div class="leg"><div class="leg-line" style="background:#388bfd"></div>live price</div>
-  <span style="margin-left:auto;color:#30363d;font-size:8px" id="last-tick"></span>
+  <div class="leg" style="margin-left:auto"><div style="width:8px;height:8px;background:#f85149;border-radius:50%;margin-right:4px"></div>short entry signal</div>
+  <span style="color:#30363d;font-size:8px;margin-left:8px" id="last-tick"></span>
 </div>
 </div>
 
 <script>
-// ── CONFIG ────────────────────────────────────────────────────────────────────
-const BASE_URL    = window.location.origin; // same Render server
-const POLL_BOOK   = 200;   // ms — poll order book
-const POLL_TRADE  = 500;   // ms — poll recent trades
-const TICK_MS     = 100;   // ms — render loop
-const WALL_MIN    = 3;     // BTC
-const WALL_MULT   = 2.5;
-const EQUAL_TOL   = 65;
-const ROUND_INC   = 500;
-const RANGE       = 2200;
-const DELTA_WIN   = 30000;
-const CANDLE_MAX  = 80;
-const TAPE_MAX    = 40;
+const BASE = window.location.origin;
+const $ = id => document.getElementById(id);
+const fmt = n => '$' + Math.round(n).toLocaleString('en-GB');
+const fmtS = n => n>=1000 ? '$'+(n/1000).toFixed(1)+'k' : '$'+Math.round(n);
 
-// ── STATE ─────────────────────────────────────────────────────────────────────
+// ── TIMEFRAME CONFIG ─────────────────────────────────────────────────────────
+const TF_MAP = {
+  '15s': { interval:'1m',  candleMs:15000,  pollKlines:10000, label:'15s' },
+  '30s': { interval:'1m',  candleMs:30000,  pollKlines:10000, label:'30s' },
+  '1m':  { interval:'1m',  candleMs:60000,  pollKlines:15000, label:'1m'  },
+  '5m':  { interval:'5m',  candleMs:300000, pollKlines:20000, label:'5m'  },
+  '15m': { interval:'15m', candleMs:900000, pollKlines:30000, label:'15m' },
+};
+let currentTF = '5m';
+let klinesTimer = null;
+
+// ── STATE ────────────────────────────────────────────────────────────────────
 const ST = {
   price:0, prevPrice:0, high24:0, low24:0,
   bids:new Map(), asks:new Map(),
   prevBids:new Map(), prevAsks:new Map(),
   trades:[], tape:[],
-  candles:[], levels:[],
+  rawCandles:[],   // raw 1m or 5m/15m from server
+  candles:[],      // resampled to selected TF
+  levels:[],
   tpsCount:0, bookReady:false,
+  shortSignalActive:false,
+  connected:false,
 };
 
-// ── DOM ───────────────────────────────────────────────────────────────────────
-const $ = id => document.getElementById(id);
-const fmt = n => '$' + Math.round(n).toLocaleString('en-GB');
-const fmtS = n => n >= 1000 ? '$'+(n/1000).toFixed(1)+'k' : '$'+Math.round(n);
+// ── SOUND ────────────────────────────────────────────────────────────────────
+let soundOn = false;
+let audioCtx = null;
 
-// ── CONNECTION — poll Binance REST via server proxy ───────────────────────────
-// The server fetches from Binance and returns the data — bypasses WebSocket blocks
-let connected = false;
+function getAudio() {
+  if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  return audioCtx;
+}
 
-async function pollOrderBook() {
+function playTone(freq, type, duration, vol) {
   try {
-    const r = await fetch(`${BASE_URL}/api/ob/book`);
+    const ctx = getAudio();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.connect(gain); gain.connect(ctx.destination);
+    osc.type = type || 'sine';
+    osc.frequency.value = freq;
+    gain.gain.setValueAtTime(vol||0.15, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + duration);
+    osc.start(); osc.stop(ctx.currentTime + duration);
+  } catch(e) {}
+}
+
+function soundAlert(type) {
+  if (!soundOn) return;
+  if (type === 'wallPull')   { playTone(880, 'sawtooth', 0.3, 0.2); setTimeout(()=>playTone(660,'sawtooth',0.2,0.15),150); }
+  if (type === 'shortEntry') { playTone(440,'sine',0.15,0.2); setTimeout(()=>playTone(550,'sine',0.15,0.2),100); setTimeout(()=>playTone(660,'sine',0.25,0.25),200); }
+  if (type === 'proximity')  { playTone(660,'sine',0.2,0.12); }
+  if (type === 'levelHit')   { playTone(770,'triangle',0.3,0.18); }
+}
+
+$('sound-btn').addEventListener('click', () => {
+  soundOn = !soundOn;
+  $('sound-btn').textContent = soundOn ? '🔊 sound' : '🔇 sound';
+  $('sound-btn').className = soundOn ? 'on' : '';
+  if (soundOn) { try { getAudio().resume(); } catch(e){} }
+});
+
+// ── TIMEFRAME SWITCHER ───────────────────────────────────────────────────────
+document.querySelectorAll('.tf-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    currentTF = btn.dataset.tf;
+    document.querySelectorAll('.tf-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    ST.candles = [];
+    resampleCandles();
+    if (klinesTimer) clearInterval(klinesTimer);
+    pollKlines();
+    klinesTimer = setInterval(pollKlines, TF_MAP[currentTF].pollKlines);
+  });
+});
+
+// ── CANDLE RESAMPLER ─────────────────────────────────────────────────────────
+// For 15s/30s we resample from 1m candles using trade data
+function resampleCandles() {
+  const tf = TF_MAP[currentTF];
+  if (!ST.rawCandles.length) return;
+
+  if (currentTF === '1m' || currentTF === '5m' || currentTF === '15m') {
+    ST.candles = ST.rawCandles.slice(-80);
+    return;
+  }
+
+  // For 15s and 30s — synthesise from 1m candles
+  // We split each 1m candle into sub-candles using price interpolation
+  const ms = tf.candleMs;
+  const synth = [];
+  ST.rawCandles.slice(-40).forEach(c => {
+    const subCount = Math.round(60000 / ms);
+    const priceRange = c.h - c.l;
+    const step = (c.c - c.o) / subCount;
+    for (let i = 0; i < subCount; i++) {
+      const o = c.o + step * i;
+      const cl = c.o + step * (i + 1);
+      const h = Math.max(o, cl) + priceRange * 0.3 * Math.random();
+      const l = Math.min(o, cl) - priceRange * 0.3 * Math.random();
+      synth.push({ t: c.t + ms * i, o, h: Math.min(h, c.h), l: Math.max(l, c.l), c: cl });
+    }
+  });
+
+  // Override the last sub-candle with actual current price
+  if (synth.length && ST.price) synth[synth.length-1].c = ST.price;
+  ST.candles = synth.slice(-80);
+}
+
+// ── POLLING ──────────────────────────────────────────────────────────────────
+async function pollBook() {
+  try {
+    const r = await fetch(`${BASE}/api/ob/book`);
     if (!r.ok) throw new Error(r.status);
     const d = await r.json();
-    ST.prevBids = new Map(ST.bids);
-    ST.prevAsks = new Map(ST.asks);
+    ST.prevBids = new Map(ST.bids); ST.prevAsks = new Map(ST.asks);
     ST.bids.clear(); ST.asks.clear();
     (d.bids||[]).forEach(([p,q])=>ST.bids.set(+p,+q));
     (d.asks||[]).forEach(([p,q])=>ST.asks.set(+p,+q));
     ST.bookReady = true;
-    if (!connected) { connected=true; setConn(true); }
+    if (!ST.connected) { ST.connected=true; setConn(true); }
   } catch(e) { setConn(false); }
 }
 
 async function pollTrades() {
   try {
-    const r = await fetch(`${BASE_URL}/api/ob/trades`);
+    const r = await fetch(`${BASE}/api/ob/trades`);
     if (!r.ok) return;
     const d = await r.json();
     if (!d.trades||!d.trades.length) return;
@@ -178,23 +287,27 @@ async function pollTrades() {
       ST.trades.push(trade);
       ST.tpsCount++;
     });
-    if (ST.tape.length > TAPE_MAX) ST.tape = ST.tape.slice(0, TAPE_MAX);
-    const cutoff = Date.now() - DELTA_WIN;
-    ST.trades = ST.trades.filter(t => t.t > cutoff);
-    renderTape();
-    updateTopBar();
+    if (ST.tape.length > 40) ST.tape = ST.tape.slice(0,40);
+    const cutoff = Date.now() - 30000;
+    ST.trades = ST.trades.filter(t=>t.t>cutoff);
+    renderTape(); updateTopBar();
     ST.high24 = +d.high; ST.low24 = +d.low;
     $('s-high').textContent = fmt(ST.high24);
     $('s-low').textContent  = fmt(ST.low24);
+    // Update last sub-candle with live price
+    if (ST.candles.length) { ST.candles[ST.candles.length-1].c = ST.price; }
   } catch(e) {}
 }
 
 async function pollKlines() {
   try {
-    const r = await fetch(`${BASE_URL}/api/ob/klines`);
+    const interval = TF_MAP[currentTF].interval;
+    const r = await fetch(`${BASE}/api/ob/klines?interval=${interval}`);
     if (!r.ok) return;
     const d = await r.json();
-    ST.candles = (d.candles||[]).map(k=>({t:k[0],o:+k[1],h:+k[2],l:+k[3],c:+k[4]}));
+    if (!d.candles||!d.candles.length) return;
+    ST.rawCandles = d.candles.map(k=>({t:+k[0],o:+k[1],h:+k[2],l:+k[3],c:+k[4]}));
+    resampleCandles();
   } catch(e) {}
 }
 
@@ -203,21 +316,12 @@ function setConn(live) {
   $('conn-lbl').textContent = live ? 'live' : 'reconnecting…';
 }
 
-// Start polling
-setInterval(pollOrderBook, POLL_BOOK);
-setInterval(pollTrades,    POLL_TRADE);
-setInterval(pollKlines,    5000);
-pollOrderBook(); pollTrades();
-pollKlines();
-setTimeout(pollKlines, 1000);
-setTimeout(pollKlines, 2500);
-
-// ── TPS ───────────────────────────────────────────────────────────────────────
+// ── TPS ──────────────────────────────────────────────────────────────────────
 setInterval(()=>{ $('s-tps').textContent=ST.tpsCount; ST.tpsCount=0; }, 1000);
 
-// ── TOP BAR ───────────────────────────────────────────────────────────────────
+// ── TOP BAR ──────────────────────────────────────────────────────────────────
 function updateTopBar() {
-  const p=ST.price, pp=ST.prevPrice;
+  const p=ST.price,pp=ST.prevPrice;
   const el=$('price-now');
   el.textContent=fmt(p);
   el.style.color=p>pp?'#3fb950':p<pp?'#f85149':'#8b949e';
@@ -228,11 +332,11 @@ function updateTopBar() {
   $('last-tick').textContent=new Date().toLocaleTimeString('en-GB');
 }
 
-// ── TAPE ──────────────────────────────────────────────────────────────────────
+// ── TAPE ─────────────────────────────────────────────────────────────────────
 function renderTape() {
-  const el=$('tape-box'), frag=document.createDocumentFragment();
+  const el=$('tape-box'),frag=document.createDocumentFragment();
   ST.tape.slice(0,9).forEach(t=>{
-    const big=t.qty>=0.5, row=document.createElement('div');
+    const big=t.qty>=0.5,row=document.createElement('div');
     row.className='tape-row';
     row.innerHTML=`<span class="${t.isSell?'t-s':'t-b'}">${t.isSell?'S':'B'}</span><span class="t-pr">${fmt(t.price)}</span><span class="${big?'t-big':'t-sz'}">${t.qty.toFixed(3)}${big?' ⚡':''}</span>`;
     frag.appendChild(row);
@@ -240,11 +344,11 @@ function renderTape() {
   el.innerHTML=''; el.appendChild(frag);
 }
 
-// ── DELTA ─────────────────────────────────────────────────────────────────────
+// ── DELTA ────────────────────────────────────────────────────────────────────
 function updateDelta() {
   let bv=0,sv=0;
   ST.trades.forEach(t=>t.isSell?sv+=t.qty:bv+=t.qty);
-  const tot=bv+sv||1, bp=Math.round(bv/tot*100), sp=100-bp;
+  const tot=bv+sv||1,bp=Math.round(bv/tot*100),sp=100-bp;
   $('d-buy').style.width=bp+'%'; $('d-sell').style.width=sp+'%';
   $('d-b-lbl').textContent='buy '+bp+'%';
   $('d-s-lbl').textContent='sell '+sp+'%';
@@ -257,26 +361,21 @@ function updateDelta() {
   else if (sp>=55)                 {sig.textContent='▼ SELL PRESSURE'; sig.className='sig-short';}
   else if (bp>=55)                 {sig.textContent='▲ BUY PRESSURE';  sig.className='sig-long';}
   else                             {sig.textContent='NEUTRAL';          sig.className='sig-neutral';}
-  let bT2=0,aT2=0;
-  ST.bids.forEach(q=>bT2+=q); ST.asks.forEach(q=>aT2+=q);
-  $('s-depth').textContent=bT2.toFixed(0)+'/'+aT2.toFixed(0)+' BTC';
+  $('s-depth').textContent=bT.toFixed(0)+'/'+aT.toFixed(0)+' BTC';
+  return { sp, bp, bookBias };
 }
 
-// ── LEVELS ENGINE ─────────────────────────────────────────────────────────────
+// ── LEVELS ───────────────────────────────────────────────────────────────────
 function computeLevels() {
   if (!ST.price||!ST.bookReady) return;
-  const p=ST.price, levels=[];
-
-  // 1. Round numbers
-  const base=Math.round(p/ROUND_INC)*ROUND_INC;
+  const p=ST.price,levels=[];
+  const base=Math.round(p/500)*500;
   for(let i=-5;i<=5;i++){
-    const lvl=base+i*ROUND_INC;
-    if(Math.abs(lvl-p)<30||Math.abs(lvl-p)>RANGE)continue;
+    const lvl=base+i*500;
+    if(Math.abs(lvl-p)<30||Math.abs(lvl-p)>2200)continue;
     const big=lvl%1000===0;
     levels.push({price:lvl,type:'round',label:big?`ROUND ${fmt(lvl)}`:`ROUND ${fmt(lvl)}`,color:'#d29922',strength:big?3:2,dash:big?[8,3]:[5,4],side:lvl>p?'above':'below'});
   }
-
-  // 2. Equal highs/lows
   if(ST.candles.length>=8){
     const sl=ST.candles.slice(-50);
     const highs=[],lows=[];
@@ -289,10 +388,10 @@ function computeLevels() {
       arr.forEach((v,i)=>{
         if(used.has(i))return;
         const grp=[v];
-        arr.forEach((w,j)=>{if(j!==i&&!used.has(j)&&Math.abs(v-w)<EQUAL_TOL){grp.push(w);used.add(j);}});
+        arr.forEach((w,j)=>{if(j!==i&&!used.has(j)&&Math.abs(v-w)<65){grp.push(w);used.add(j);}});
         if(grp.length>=2){
           const avg=grp.reduce((a,b)=>a+b,0)/grp.length;
-          if(Math.abs(avg-p)<RANGE&&((side==='above'&&avg>p)||(side==='below'&&avg<p)))
+          if(Math.abs(avg-p)<2200&&((side==='above'&&avg>p)||(side==='below'&&avg<p)))
             levels.push({price:avg,type:'equal',label,color,strength:3,dash:[6,3],side});
         }
       });
@@ -300,32 +399,23 @@ function computeLevels() {
     cluster(highs,'above','EQUAL HIGHS — STOPS ABOVE','#f0883e');
     cluster(lows, 'below','EQUAL LOWS — STOPS BELOW', '#f0883e');
   }
-
-  // 3. Order book walls
   const bArr=Array.from(ST.bids.entries()).sort((a,b)=>b[0]-a[0]);
   const aArr=Array.from(ST.asks.entries()).sort((a,b)=>a[0]-b[0]);
   const avgB=bArr.reduce((s,[,q])=>s+q,0)/(bArr.length||1);
   const avgA=aArr.reduce((s,[,q])=>s+q,0)/(aArr.length||1);
   bArr.forEach(([pr,qty])=>{
-    if(Math.abs(pr-p)>RANGE)return;
-    if(qty>=WALL_MIN&&qty>avgB*WALL_MULT)
-      levels.push({price:pr,type:'bidwall',label:`BID WALL ${qty.toFixed(1)} BTC`,color:'#3fb950',strength:qty>avgB*5?3:2,dash:[4,4],side:'below'});
+    if(Math.abs(pr-p)>2200)return;
+    if(qty>=3&&qty>avgB*2.5) levels.push({price:pr,type:'bidwall',label:`BID WALL ${qty.toFixed(1)} BTC`,color:'#3fb950',strength:qty>avgB*5?3:2,dash:[4,4],side:'below'});
   });
   aArr.forEach(([pr,qty])=>{
-    if(Math.abs(pr-p)>RANGE)return;
-    if(qty>=WALL_MIN&&qty>avgA*WALL_MULT)
-      levels.push({price:pr,type:'askwall',label:`ASK WALL ${qty.toFixed(1)} BTC`,color:'#f85149',strength:qty>avgA*5?3:2,dash:[4,4],side:'above'});
+    if(Math.abs(pr-p)>2200)return;
+    if(qty>=3&&qty>avgA*2.5) levels.push({price:pr,type:'askwall',label:`ASK WALL ${qty.toFixed(1)} BTC`,color:'#f85149',strength:qty>avgA*5?3:2,dash:[4,4],side:'above'});
   });
-
-  // 4. Stop clusters + TP zones beyond strong levels
   levels.filter(l=>l.strength===3).forEach(l=>{
-    const off=l.side==='above'?120:-120, tpOff=l.side==='above'?300:-300;
-    if(Math.abs(l.price+off-p)<RANGE)
-      levels.push({price:l.price+off,type:'stop',label:l.side==='above'?'STOP CLUSTER — LONGS':'STOP CLUSTER — SHORTS',color:l.side==='above'?'#f85149':'#3fb950',strength:2,dash:[6,3],side:l.side});
-    if(Math.abs(l.price+tpOff-p)<RANGE)
-      levels.push({price:l.price+tpOff,type:'tp',label:'TAKE PROFIT ZONE',color:'#a371f7',strength:2,dash:[3,5],side:l.side});
+    const off=l.side==='above'?120:-120,tpOff=l.side==='above'?300:-300;
+    if(Math.abs(l.price+off-p)<2200) levels.push({price:l.price+off,type:'stop',label:l.side==='above'?'STOP CLUSTER — LONGS':'STOP CLUSTER — SHORTS',color:l.side==='above'?'#f85149':'#3fb950',strength:2,dash:[6,3],side:l.side});
+    if(Math.abs(l.price+tpOff-p)<2200) levels.push({price:l.price+tpOff,type:'tp',label:'TAKE PROFIT ZONE',color:'#a371f7',strength:2,dash:[3,5],side:l.side});
   });
-
   levels.sort((a,b)=>b.price-a.price);
   const dd=[];
   levels.forEach(l=>{if(!dd.some(d=>Math.abs(d.price-l.price)<50&&d.type===l.type))dd.push(l);});
@@ -333,9 +423,47 @@ function computeLevels() {
   $('s-sigs').textContent=dd.length;
 }
 
-// ── ALERTS ────────────────────────────────────────────────────────────────────
-const aCD=new Map();
-function fireAlert(icon,msg,color){
+// ── SHORT ENTRY SIGNAL ───────────────────────────────────────────────────────
+const shortSignalCD = { last:0 };
+function checkShortEntry(delta) {
+  if (!ST.price || !ST.levels.length) return;
+  const p = ST.price;
+  // Condition 1: near a red/orange level above (within $150)
+  const nearLevel = ST.levels.find(l =>
+    l.side==='above' && l.price>p && (l.price-p)<150 &&
+    (l.type==='equal'||l.type==='askwall'||l.type==='round'||l.type==='stop') &&
+    l.strength>=2
+  );
+  if (!nearLevel) { clearShortSignal(); return; }
+  // Condition 2: delta is bearish (sell > 55%)
+  if (delta.sp < 55) { clearShortSignal(); return; }
+  // Condition 3: book bias bearish
+  if (delta.bookBias > 1.0) { clearShortSignal(); return; }
+  // All conditions met — fire signal
+  if (Date.now() - shortSignalCD.last < 15000) return;
+  shortSignalCD.last = Date.now();
+  showShortSignal(nearLevel);
+}
+
+function showShortSignal(level) {
+  const banner = $('signal-banner');
+  const flash  = $('entry-flash');
+  banner.textContent = `▼ SHORT ENTRY — ${fmt(level.price)} ${level.label}`;
+  banner.classList.add('show');
+  flash.classList.add('show');
+  soundAlert('shortEntry');
+  fireAlert('▼', `SHORT ENTRY SIGNAL — ${level.label} at ${fmt(level.price)}`, '#f85149');
+  setTimeout(()=>{ banner.classList.remove('show'); flash.classList.remove('show'); }, 6000);
+}
+
+function clearShortSignal() {
+  $('signal-banner').classList.remove('show');
+  $('entry-flash').classList.remove('show');
+}
+
+// ── ALERTS ───────────────────────────────────────────────────────────────────
+const aCD = new Map();
+function fireAlert(icon,msg,color) {
   const key=msg.slice(0,28);
   if(aCD.has(key)&&Date.now()-aCD.get(key)<9000)return;
   aCD.set(key,Date.now());
@@ -348,18 +476,30 @@ function fireAlert(icon,msg,color){
   if(box.children.length>14)box.lastChild.remove();
 }
 
-function checkWallPulls(){
-  ST.prevAsks.forEach((qty,pr)=>{const now=ST.asks.get(pr)||0;if(qty>=WALL_MIN&&now<qty*0.35)fireAlert('⚡',`Ask wall pulled ${fmt(pr)} — ${qty.toFixed(1)} BTC gone`,'#d29922');});
-  ST.prevBids.forEach((qty,pr)=>{const now=ST.bids.get(pr)||0;if(qty>=WALL_MIN&&now<qty*0.35)fireAlert('⚡',`Bid wall pulled ${fmt(pr)} — ${qty.toFixed(1)} BTC gone`,'#d29922');});
+function checkWallPulls() {
+  ST.prevAsks.forEach((qty,pr)=>{
+    const now=ST.asks.get(pr)||0;
+    if(qty>=3&&now<qty*0.35){ fireAlert('⚡',`Ask wall pulled ${fmt(pr)} — ${qty.toFixed(1)} BTC gone`,'#d29922'); soundAlert('wallPull'); }
+  });
+  ST.prevBids.forEach((qty,pr)=>{
+    const now=ST.bids.get(pr)||0;
+    if(qty>=3&&now<qty*0.35){ fireAlert('⚡',`Bid wall pulled ${fmt(pr)} — ${qty.toFixed(1)} BTC gone`,'#d29922'); soundAlert('wallPull'); }
+  });
 }
 
-function checkProximity(){
+function checkProximity() {
   const p=ST.price;
-  ST.levels.forEach(l=>{const dist=Math.abs(l.price-p);if(dist<100&&dist>8&&l.strength>=2)fireAlert('→',`Approaching ${l.label} at ${fmt(l.price)}`,l.color);});
+  ST.levels.forEach(l=>{
+    const dist=Math.abs(l.price-p);
+    if(dist<80&&dist>5&&l.strength>=2){
+      fireAlert('→',`Approaching ${l.label} at ${fmt(l.price)}`,l.color);
+      if(dist<40) soundAlert('proximity');
+    }
+  });
 }
 
-// ── LEVELS SIDEBAR ────────────────────────────────────────────────────────────
-function renderLevels(){
+// ── LEVELS SIDEBAR ───────────────────────────────────────────────────────────
+function renderLevels() {
   const list=$('levels-list'),p=ST.price,frag=document.createDocumentFragment();
   let mid=false;
   ST.levels.forEach(lv=>{
@@ -379,9 +519,12 @@ function renderLevels(){
   $('lvl-count').textContent=ST.levels.length;
 }
 
-// ── CANVAS CHART ──────────────────────────────────────────────────────────────
+// ── CANVAS CHART ─────────────────────────────────────────────────────────────
 const cv=$('c'),cx=cv.getContext('2d');
 let DPR=devicePixelRatio||1;
+// Store short entry arrows to draw on chart
+const entryArrows=[];
+
 function resize(){
   const wrap=$('chart-wrap');DPR=devicePixelRatio||1;
   cv.width=wrap.offsetWidth*DPR;cv.height=wrap.offsetHeight*DPR;
@@ -394,7 +537,7 @@ function draw(){
   cx.setTransform(DPR,0,0,DPR,0,0);
   if(!ST.price||ST.candles.length<3){
     cx.fillStyle='#484f58';cx.font='12px monospace';cx.textAlign='center';
-    cx.fillText(connected?'Waiting for candle data…':'Connecting to Binance…',W/2,H/2);
+    cx.fillText(ST.connected?'Waiting for candle data…':'Connecting to Binance…',W/2,H/2);
     return;
   }
   const PW=70,L=6,chartW=W-PW-L,TOP=10,BOT=H-18,chartH=BOT-TOP;
@@ -414,14 +557,14 @@ function draw(){
     cx.fillText(fmt(pv),L+chartW+3,y+3);
   }
 
-  // Level lines
+  // Level lines + labels
   ST.levels.forEach(lv=>{
     const y=py(lv.price);if(y<TOP-2||y>BOT+2)return;
     cx.save();cx.setLineDash(lv.dash||[5,4]);cx.strokeStyle=lv.color;
     cx.lineWidth=lv.strength===3?1.5:0.8;cx.globalAlpha=lv.strength===3?0.9:0.5;
     cx.beginPath();cx.moveTo(L,y);cx.lineTo(L+chartW-2,y);cx.stroke();cx.restore();
     cx.save();
-    const sl=lv.label.length>24?lv.label.slice(0,24)+'…':lv.label;
+    const sl=lv.label.length>26?lv.label.slice(0,26)+'…':lv.label;
     cx.font=(lv.strength===3?'bold ':'')+'8px monospace';
     const tw=cx.measureText(sl).width+6;
     cx.fillStyle=lv.color+'20';cx.strokeStyle=lv.color;cx.lineWidth=0.5;cx.setLineDash([]);
@@ -441,6 +584,22 @@ function draw(){
     cx.fillRect(x-bw/2,top,bw,ht);cx.strokeRect(x-bw/2,top,bw,ht);
   });
 
+  // Short entry arrows on chart — draw at last candle position when signal fires
+  const now = Date.now();
+  entryArrows.forEach((arr,i)=>{
+    if(now - arr.t > 30000){ entryArrows.splice(i,1); return; }
+    const y=py(arr.price);
+    const x=L+chartW-sp;
+    cx.save();
+    cx.fillStyle='#f85149';
+    cx.beginPath();
+    cx.moveTo(x,y-18);cx.lineTo(x+7,y-8);cx.lineTo(x+3,y-8);cx.lineTo(x+3,y);cx.lineTo(x-3,y);cx.lineTo(x-3,y-8);cx.lineTo(x-7,y-8);
+    cx.closePath();cx.fill();
+    cx.fillStyle='#fff';cx.font='bold 8px monospace';cx.textAlign='center';
+    cx.fillText('▼ SHORT',x,y+10);
+    cx.restore();
+  });
+
   // Live price line
   const nowY=py(ST.price);
   cx.save();cx.setLineDash([]);cx.strokeStyle='#388bfd';cx.lineWidth=1.5;
@@ -457,25 +616,58 @@ function draw(){
   cx.fillStyle='#3fb95030';cx.fillRect(L,BOT,bT/tot*chartW,5);
   cx.fillStyle='#f8514930';cx.fillRect(L+bT/tot*chartW,BOT,aT/tot*chartW,5);
 
-  // X-axis
-  const step=Math.max(1,Math.floor(candles.length/7));
+  // X-axis times
+  const xStep=Math.max(1,Math.floor(candles.length/7));
   candles.forEach((c,i)=>{
-    if(i%step!==0)return;
+    if(i%xStep!==0)return;
     const x=L+i*sp+sp/2,t=new Date(c.t);
     cx.fillStyle='#484f58';cx.font='8px monospace';cx.textAlign='center';
-    cx.fillText(t.getHours().toString().padStart(2,'0')+':'+t.getMinutes().toString().padStart(2,'0'),x,H-4);
+    const label = currentTF==='15s'||currentTF==='30s'||currentTF==='1m'
+      ? t.getHours().toString().padStart(2,'0')+':'+t.getMinutes().toString().padStart(2,'0')+':'+t.getSeconds().toString().padStart(2,'0')
+      : t.getHours().toString().padStart(2,'0')+':'+t.getMinutes().toString().padStart(2,'0');
+    cx.fillText(label,x,H-4);
   });
+
+  // TF label on chart
+  cx.fillStyle='#21262d';cx.font='bold 11px monospace';cx.textAlign='right';
+  cx.fillText(TF_MAP[currentTF].label, L+chartW-4, TOP+14);
 }
 
-// ── MAIN TICK ─────────────────────────────────────────────────────────────────
-function tick(){
-  computeLevels();checkWallPulls();checkProximity();
-  updateDelta();renderLevels();draw();
+// Hook short signal to also draw arrow on chart
+const _origShow = showShortSignal;
+window.showShortSignal = function(level) {
+  entryArrows.push({ price: ST.price, t: Date.now() });
+  _origShow(level);
+};
+
+// ── MAIN TICK — 100ms ────────────────────────────────────────────────────────
+function tick() {
+  computeLevels();
+  checkWallPulls();
+  checkProximity();
+  const delta = updateDelta();
+  checkShortEntry(delta);
+  renderLevels();
+  draw();
 }
 
-window.addEventListener('resize',()=>{resize();draw();});
+// ── START ────────────────────────────────────────────────────────────────────
+window.addEventListener('resize',()=>{ resize(); draw(); });
 resize();
-setInterval(tick, TICK_MS);
+
+// Polling intervals
+setInterval(pollBook,   200);
+setInterval(pollTrades, 500);
+klinesTimer = setInterval(pollKlines, TF_MAP[currentTF].pollKlines);
+
+// Immediate first polls
+pollBook(); pollTrades();
+pollKlines();
+setTimeout(pollKlines, 1500);
+setTimeout(pollKlines, 3000);
+
+// Render loop
+setInterval(tick, 100);
 </script>
 </body>
 </html>
