@@ -26,6 +26,12 @@ html,body{height:100%;background:#0a0e14;color:#e6edf3;font-family:'Courier New'
 .sig-neutral{background:#1c1f26;color:#8b949e;border:1px solid #30363d}
 #sound-btn{font-size:9px;padding:2px 8px;border-radius:3px;border:1px solid #30363d;background:transparent;color:#484f58;cursor:pointer;font-family:'Courier New',monospace;flex-shrink:0;transition:all .15s}
 #sound-btn.on{color:#3fb950;border-color:#3fb95066}
+#zoom-wrap{display:flex;gap:3px;align-items:center;flex-shrink:0}
+.zoom-lbl{font-size:8px;color:#484f58;text-transform:uppercase;letter-spacing:.06em}
+.zm-btn{font-size:11px;padding:1px 8px;border-radius:3px;border:1px solid #30363d;background:transparent;color:#8b949e;cursor:pointer;font-family:'Courier New',monospace;transition:all .15s;line-height:1.4}
+.zm-btn:hover{background:#21262d;color:#e6edf3}
+#zoom-val{font-size:9px;color:#e6edf3;min-width:24px;text-align:center}
+#sound-btn.on{color:#3fb950;border-color:#3fb95066}
 #conn-wrap{display:flex;align-items:center;gap:4px;margin-left:auto;flex-shrink:0}
 #conn-dot{width:7px;height:7px;border-radius:50%;background:#f85149;transition:background .3s;flex-shrink:0}
 #conn-dot.on{background:#3fb950}
@@ -98,6 +104,7 @@ canvas{display:block}
   <div class="tb-stat"><span class="lbl">signals</span><span class="val" id="s-sigs" style="color:#3fb950">0</span></div>
   <div class="tb-div"></div>
   <span id="direction-sig" class="sig-neutral">NEUTRAL</span>
+  <div id="zoom-wrap"><span class="zoom-lbl">zoom</span><button class="zm-btn" id="zm-out">−</button><span id="zoom-val">20</span><button class="zm-btn" id="zm-in">+</button></div>
   <button id="sound-btn" title="Toggle sound alerts">🔇 sound</button>
   <div id="conn-wrap"><div id="conn-dot"></div><span id="conn-lbl">connecting…</span></div>
 </div>
@@ -143,6 +150,8 @@ canvas{display:block}
 
 <script>
 const BASE = window.location.origin;
+let ZOOM = 20; // candles visible on screen — default 20 for clarity
+const ZOOM_MIN = 8, ZOOM_MAX = 70;
 const $ = id => document.getElementById(id);
 const fmt = n => '$' + Math.round(n).toLocaleString('en-GB');
 const fmtS = n => n>=1000 ? '$'+(n/1000).toFixed(1)+'k' : '$'+Math.round(n);
@@ -202,6 +211,9 @@ function soundAlert(type) {
   if (type === 'proximity')  { playTone(660,'sine',0.2,0.12); }
   if (type === 'levelHit')   { playTone(770,'triangle',0.3,0.18); }
 }
+
+$('zm-in').addEventListener('click', () => { ZOOM = Math.min(ZOOM_MAX, ZOOM + (ZOOM < 20 ? 2 : 5)); $('zoom-val').textContent = ZOOM; });
+$('zm-out').addEventListener('click', () => { ZOOM = Math.max(ZOOM_MIN, ZOOM - (ZOOM <= 20 ? 2 : 5)); $('zoom-val').textContent = ZOOM; });
 
 $('sound-btn').addEventListener('click', () => {
   soundOn = !soundOn;
@@ -541,7 +553,7 @@ function draw(){
     return;
   }
   const PW=70,L=6,chartW=W-PW-L,TOP=10,BOT=H-18,chartH=BOT-TOP;
-  const candles=ST.candles.slice(-70);
+  const candles=ST.candles.slice(-ZOOM);
   const prices=candles.flatMap(c=>[c.h,c.l]);
   ST.levels.forEach(l=>prices.push(l.price));prices.push(ST.price);
   const pMin=Math.min(...prices),pMax=Math.max(...prices);
@@ -617,7 +629,7 @@ function draw(){
   cx.fillStyle='#f8514930';cx.fillRect(L+bT/tot*chartW,BOT,aT/tot*chartW,5);
 
   // X-axis times
-  const xStep=Math.max(1,Math.floor(candles.length/7));
+  const xStep=Math.max(1,Math.floor(candles.length/6));
   candles.forEach((c,i)=>{
     if(i%xStep!==0)return;
     const x=L+i*sp+sp/2,t=new Date(c.t);
