@@ -207,7 +207,10 @@ function setConn(live) {
 setInterval(pollOrderBook, POLL_BOOK);
 setInterval(pollTrades,    POLL_TRADE);
 setInterval(pollKlines,    5000);
-pollOrderBook(); pollTrades(); pollKlines();
+pollOrderBook(); pollTrades();
+pollKlines();
+setTimeout(pollKlines, 1000);
+setTimeout(pollKlines, 2500);
 
 // ── TPS ───────────────────────────────────────────────────────────────────────
 setInterval(()=>{ $('s-tps').textContent=ST.tpsCount; ST.tpsCount=0; }, 1000);
