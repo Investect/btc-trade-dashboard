@@ -111,23 +111,18 @@ app.post('/api/indicators', express.text({ type: '*/*' }), (req, res) => {
 app.get('/api/indicators', (req, res) => res.json(latestIndicators || {}));
 
 // ─── FREE INTEL FEED ─────────────────────────────────────────────────────────
-// Caches results for 30s to avoid hammering free APIs
 let intelCache = null;
 let intelCacheTime = 0;
-const INTEL_CACHE_MS = 30000; // 30s global cache — per-source caches handle the real throttling
+const INTEL_CACHE_MS = 30000;
 
-// Keyword scoring rules — Claude-style analyst logic in pure JS
 function scoreHeadline(title, source) {
   const t = (title || '').toLowerCase();
   let score = 1;
   const bullets = [];
   let category = 'news';
-
-  // ── SCORE 5 triggers ──
   if (/flash.?crash|circuit.?breaker|exchange.?halt|hack|exploit|emergency|black.?swan/.test(t)) {
     score = 5; bullets.push('Extreme event — immediate price impact likely'); bullets.push('Expect high volatility and possible cascade'); category = 'news';
   }
-  // ── SCORE 4 triggers ──
   else if (/liquidat/.test(t)) {
     score = 4; category = 'flow';
     const m = t.match(/\$?([\d,.]+)\s*(million|billion|m|b)?/);
@@ -154,7 +149,6 @@ function scoreHeadline(title, source) {
     bullets.push('ETF inflow = sustained buy pressure, outflow = distribution');
     bullets.push('Watch for momentum continuation rather than fading moves');
   }
-  // ── SCORE 3 triggers ──
   else if (/funding.?rate|open.?interest|long.?short|short.?squeeze/.test(t)) {
     score = 3; category = 'technical';
     bullets.push('Derivatives market signal — funding/OI shift affects spot price');
@@ -179,7 +173,6 @@ function scoreHeadline(title, source) {
     bullets.push('Extreme sentiment often contrarian — crowds are wrong at peaks');
     bullets.push('Watch for confirmation on volume before following momentum');
   }
-  // ── SCORE 2 triggers ──
   else if (/adoption|partnership|upgrade|network|protocol|halving|mining/.test(t)) {
     score = 2; category = 'onchain';
     bullets.push('On-chain development — medium-term positive but limited scalp impact');
@@ -190,16 +183,11 @@ function scoreHeadline(title, source) {
     bullets.push('Opinion/analysis piece — directional bias signal only');
     bullets.push('Analyst targets rarely cause immediate price movement');
   }
-  // ── DEFAULT ──
   else {
     score = 1; category = 'news';
     bullets.push('Background noise — monitor but unlikely to affect scalp');
   }
-
-  // Source credibility boost
   if (/whale.?alert|cryptoquant|glassnode/.test((source||'').toLowerCase())) score = Math.min(5, score + 1);
-
-  // Time decay — older news less impactful (will be set from pubDate)
   return { score, bullets, category };
 }
 
@@ -219,7 +207,6 @@ function decayScore(score, dateStr) {
   return score;
 }
 
-// ── Per-source caches so fast sources (social) update more often than slow ones (news) ──
 const srcCache = {};
 async function cachedFetch(key, fn, ttlMs) {
   const now = Date.now();
@@ -250,7 +237,6 @@ async function fetchRSS(url, sourceName, limit=8) {
 }
 
 async function fetchCryptoPanic() {
-  // news + media + all kinds
   const [news, social] = await Promise.all([
     fetch('https://cryptopanic.com/api/v1/posts/?auth_token=free&currencies=BTC&public=true&kind=news', {signal:AbortSignal.timeout(5000)}).then(r=>r.json()).catch(()=>({results:[]})),
     fetch('https://cryptopanic.com/api/v1/posts/?auth_token=free&currencies=BTC&public=true&kind=media', {signal:AbortSignal.timeout(5000)}).then(r=>r.json()).catch(()=>({results:[]})),
@@ -292,8 +278,6 @@ async function fetchStockTwits() {
 }
 
 async function fetchNitter() {
-  // Nitter = free public Twitter/X mirror with RSS feeds
-  // Multiple BTC hashtag and account feeds
   const nitterFeeds = [
     { url:'https://nitter.net/search/rss?q=%23Bitcoin+%23BTCUSD&f=tweets', label:'Twitter #Bitcoin' },
     { url:'https://nitter.net/search/rss?q=%24BTC+price&f=tweets',          label:'Twitter $BTC' },
@@ -322,7 +306,6 @@ async function fetchNitter() {
 }
 
 async function fetchWhaleAlert() {
-  // WhaleAlert free RSS feed
   try {
     const items = await fetchRSS('https://whale-alert.io/rss', 'Whale Alert 🐋', 8);
     return items;
@@ -354,7 +337,6 @@ async function fetchBinanceData() {
   const high   = parseFloat(ticker.highPrice);
   const low    = parseFloat(ticker.lowPrice);
   const range  = ((high-low)/low*100).toFixed(2);
-  // Last hour candle analysis
   const lastH  = klines[0];
   const hourChange = lastH ? ((parseFloat(lastH[4])-parseFloat(lastH[1]))/parseFloat(lastH[1])*100).toFixed(2) : null;
   let score=2, bullets=[];
@@ -366,8 +348,6 @@ async function fetchBinanceData() {
 }
 
 async function buildIntelFeed() {
-  // Parallel fetch with per-source TTLs
-  // Social = 30s cache, news = 2min, market data = 30s
   const [cpItems, cointelegraph, coindesk, decrypt, reddit, stocktwits, nitter, whaleAlert, fng, binance] = await Promise.all([
     cachedFetch('cryptopanic',    fetchCryptoPanic,  60000),
     cachedFetch('cointelegraph',  ()=>fetchRSS('https://cointelegraph.com/rss','CoinTelegraph',8), 120000),
@@ -377,22 +357,17 @@ async function buildIntelFeed() {
     cachedFetch('stocktwits',     fetchStockTwits, 30000),
     cachedFetch('nitter',         fetchNitter,  30000),
     cachedFetch('whalealert',     fetchWhaleAlert, 60000),
-    cachedFetch('feargreed',      fetchFearGreed, 300000), // 5min — only updates daily
+    cachedFetch('feargreed',      fetchFearGreed, 300000),
     cachedFetch('binance',        fetchBinanceData, 30000),
   ]);
-
-  // Process all raw items through scoring engine
   const rawItems = [...cpItems, ...cointelegraph, ...coindesk, ...decrypt, ...reddit, ...stocktwits, ...nitter, ...whaleAlert];
   const scoredItems = rawItems.map(item => {
     const { score, bullets, category } = scoreHeadline(item.title, item.source);
     let finalScore = decayScore(score, item.pubDate);
-    // Boost high-engagement social posts
     if (item.upvotes   && item.upvotes   > 500)  finalScore = Math.min(5, finalScore + 1);
     if (item.followers && item.followers > 10000) finalScore = Math.min(5, finalScore + 1);
-    // Add sentiment bullet for StockTwits
     if (item.sentiment === 'Bullish') bullets.unshift('📈 StockTwits crowd tagged this: BULLISH');
     if (item.sentiment === 'Bearish') bullets.unshift('📉 StockTwits crowd tagged this: BEARISH');
-    // Tag source type
     const isSocial = item.source.match(/Reddit|StockTwits|Twitter|Nitter/i);
     return {
       headline: item.title.length > 100 ? item.title.slice(0,97)+'…' : item.title,
@@ -403,8 +378,6 @@ async function buildIntelFeed() {
       bullets,
     };
   });
-
-  // Specials (pre-scored market data)
   const specials = [fng, binance].filter(Boolean).map(item => ({
     headline: item.title,
     source:   item.source,
@@ -413,19 +386,14 @@ async function buildIntelFeed() {
     pubDate:  item.pubDate || new Date().toISOString(),
     bullets:  item.bullets,
   }));
-
   const all  = [...specials, ...scoredItems];
-
-  // Filter out junk — too short, pure spam, no BTC relevance
   const filtered = all.filter(item => {
     const h = item.headline.toLowerCase();
-    if (item.headline.length < 15) return false; // too short
-    if (/spell|abracadabra|squids|holy mace/i.test(h)) return false; // obvious spam
-    if (item.source.includes('StockTwits') && item.score < 2) return false; // low-quality social noise
+    if (item.headline.length < 15) return false;
+    if (/spell|abracadabra|squids|holy mace/i.test(h)) return false;
+    if (item.source.includes('StockTwits') && item.score < 2) return false;
     return true;
   });
-
-  // Deduplicate by headline prefix
   const seen = new Set();
   const deduped = filtered.filter(item => {
     const key = item.headline.slice(0,50).toLowerCase().replace(/[^a-z0-9]/g,'');
@@ -433,13 +401,7 @@ async function buildIntelFeed() {
     seen.add(key);
     return true;
   });
-
-  deduped.sort((a, b) => {
-    // Newest first — primary sort by pubDate
-    return new Date(b.pubDate) - new Date(a.pubDate);
-  });
-
-  // Only keep top 12 newest, remove anything beyond that
+  deduped.sort((a, b) => new Date(b.pubDate) - new Date(a.pubDate));
   return deduped.slice(0, 12);
 }
 
@@ -540,6 +502,9 @@ app.get('/api/analyse/:id', (req, res) => {
   writeDb(db);
   res.json({ ok: true, analysis });
 });
+
+// ─── ORDER BOOK PANEL ────────────────────────────────────────────────────────
+app.get('/orderbook', (req, res) => res.sendFile(path.join(__dirname, 'public', 'orderbook.html')));
 
 // ─── START ───────────────────────────────────────────────────────────────────
 app.listen(PORT, () => console.log(`BTC Trade Dashboard → http://localhost:${PORT}`));
