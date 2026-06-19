@@ -528,8 +528,8 @@ function computeLevels(){
     if(Math.abs(lvl-p)<20||Math.abs(lvl-p)>RANGE)continue;
     const isK=lvl%1000===0;
     levels.push({price:lvl,type:'round',
-      label:isK?`ROUND ${fmt(lvl)}`:`ROUND ${fmt(lvl)}`,
-      pill:isK?`⚡ ROUND — stop magnet, expect sweep`:`· ROUND — minor stop cluster`,
+      label:isK?`⚡ PRICE MAGNET ${fmt(lvl)}`:`· WATCH LEVEL ${fmt(lvl)}`,
+      pill:isK?`Big round number. Lots of stops and orders sit here. Price always reacts.`:`Minor level. Watch for a slow down or small bounce here.`,
       color:isK?'#e0af68':'#a8875a',strength:isK?3:2,dash:isK?[8,3]:[5,4],side:lvl>p?'above':'below'});
   }
   if(ST.candles.length>=4){
@@ -551,19 +551,19 @@ function computeLevels(){
         }
       });
     };
-    cluster(highs,'above','EQUAL HIGHS — STOP HUNT','#f97316','↑ SWEEP TARGET — short on rejection');
-    cluster(lows,'below','EQUAL LOWS — STOP HUNT','#f97316','↓ SWEEP TARGET — bounce expected');
+    cluster(highs,'above','🔴 SHORTS ENTRY — stops above here','#f97316','Price will spike here to grab stops, then drop. Short on the spike.');
+    cluster(lows,'below','🟢 LONGS ENTRY — stops below here','#f97316','Price will dip here to grab stops, then rise. Buy the dip.');
   }
   const bArr=Array.from(ST.bids.entries()).sort((a,b)=>b[0]-a[0]);
   const aArr=Array.from(ST.asks.entries()).sort((a,b)=>a[0]-b[0]);
   const avgB=bArr.reduce((s,[,q])=>s+q,0)/(bArr.length||1);
   const avgA=aArr.reduce((s,[,q])=>s+q,0)/(aArr.length||1);
   bArr.forEach(([pr,qty])=>{if(Math.abs(pr-p)>RANGE)return;if(qty>=2&&qty>avgB*2)levels.push({price:pr,type:'bidwall',label:`BID WALL ${qty.toFixed(1)} BTC`,pill:`▲ BID WALL — support. Don't short below.`,color:'#4ade80',strength:qty>avgB*4?3:2,dash:[4,4],side:'below'});});
-  aArr.forEach(([pr,qty])=>{if(Math.abs(pr-p)>RANGE)return;if(qty>=2&&qty>avgA*2)levels.push({price:pr,type:'askwall',label:`ASK WALL ${qty.toFixed(1)} BTC`,pill:`▼ ASK WALL — resistance. Short on rejection.`,color:'#f87171',strength:qty>avgA*4?3:2,dash:[4,4],side:'above'});});
+  aArr.forEach(([pr,qty])=>{if(Math.abs(pr-p)>RANGE)return;if(qty>=2&&qty>avgA*2)levels.push({price:pr,type:'askwall',label:`🔴 BIG SELLERS ${qty.toFixed(1)} BTC`,pill:`Big sell orders sitting here. Price drops here. Short when it fails to break through.`,color:'#f87171',strength:qty>avgA*4?3:2,dash:[4,4],side:'above'});});
   levels.filter(l=>l.strength===3).forEach(l=>{
     const so=l.side==='above'?100:-100,to=l.side==='above'?280:-280;
-    if(Math.abs(l.price+so-p)<RANGE)levels.push({price:l.price+so,type:'stop',label:l.side==='above'?'STOP CLUSTER — LONGS':'STOP CLUSTER — SHORTS',pill:l.side==='above'?'▼ LONGS STOPPED — sell cascade zone':'▲ SHORTS STOPPED — buy surge zone',color:l.side==='above'?'#f87171':'#4ade80',strength:2,dash:[6,3],side:l.side});
-    if(Math.abs(l.price+to-p)<RANGE)levels.push({price:l.price+to,type:'tp',label:'TAKE PROFIT ZONE',pill:l.side==='above'?'◆ TP — longs exiting, sell pressure':'◆ TP — shorts covering, buy pressure',color:'#bb9af7',strength:2,dash:[3,5],side:l.side});
+    if(Math.abs(l.price+so-p)<RANGE)levels.push({price:l.price+so,type:'stop',label:l.side==='above'?'🔴 LONGS GET STOPPED HERE':'🟢 SHORTS GET STOPPED HERE',pill:l.side==='above'?'Buyers who entered below have stops here. When hit — price drops fast.':'Sellers who entered above have stops here. When hit — price rises fast.',color:l.side==='above'?'#f87171':'#4ade80',strength:2,dash:[6,3],side:l.side});
+    if(Math.abs(l.price+to-p)<RANGE)levels.push({price:l.price+to,type:'tp',label:l.side==='above'?'💜 SELL HERE — longs cashing out':'💜 BUY HERE — shorts cashing out',pill:l.side==='above'?'Traders who bought lower are selling here for profit. Good place to exit a long or enter a short.':'Traders who sold higher are buying back here. Good place to exit a short.',color:'#bb9af7',strength:2,dash:[3,5],side:l.side});
   });
   levels.sort((a,b)=>b.price-a.price);
   const dd=[];levels.forEach(l=>{if(!dd.some(d=>Math.abs(d.price-l.price)<40&&d.type===l.type))dd.push(l);});
@@ -668,40 +668,143 @@ function draw(){
   vpVis.sort((a,b)=>b.total-a.total);
   vpVis.slice(0,5).forEach(z=>{const y=py(z.lvl);if(y<TOP||y>BOT)return;cx.save();cx.globalAlpha=.06;cx.fillStyle='#fbbf24';cx.fillRect(L,y-4,chartW,8);cx.globalAlpha=.2;cx.strokeStyle='#e0af68';cx.lineWidth=.8;cx.setLineDash([3,4]);cx.beginPath();cx.moveTo(L,y);cx.lineTo(L+chartW,y);cx.stroke();cx.restore();});
 
-  // ── ZONE BANDS (before candles so candles sit on top) ───────────────────
+  // ── LIQUIDITY HUNT VISUALISATION ─────────────────────────────────────────
+  // Draws rich visual zones showing WHERE hunts will happen and HOW dangerous each level is
+
   ST.levels.forEach(lv=>{
     const y=py(lv.price);
-    // Off-screen edge marker
+
+    // Off-screen edge marker — show arrow at chart edge
     if(y<TOP-1||y>BOT+1){
       if(lv.strength===3){
         const atTop=lv.price>hi,ey=atTop?TOP+2:BOT-2;
         cx.save();
-        cx.font='600 9px "JetBrains Mono",monospace';
-        const txt=(atTop?'▲ ':'▼ ')+fmt(lv.price)+'  '+lv.label.slice(0,20);
-        const tw=cx.measureText(txt).width+12;
-        cx.fillStyle=lv.color+'1a';cx.strokeStyle=lv.color+'55';cx.lineWidth=.8;cx.setLineDash([]);
-        cx.beginPath();rr(L+4,atTop?ey:ey-13,tw,13,2);cx.fill();cx.stroke();
-        cx.fillStyle=lv.color;cx.textAlign='left';cx.fillText(txt,L+8,atTop?ey+9:ey-3);
+        cx.font='700 9px "JetBrains Mono",monospace';
+        const dist=Math.abs(lv.price-ST.price);
+        const txt=(atTop?'▲ ':'▼ ')+fmt(lv.price)+'  '+lv.label.slice(0,22)+'  ($'+Math.round(dist)+' away)';
+        const tw=cx.measureText(txt).width+14;
+        cx.fillStyle=lv.color+'25';cx.strokeStyle=lv.color+'66';cx.lineWidth=1;cx.setLineDash([]);
+        cx.beginPath();rr(L+4,atTop?ey:ey-14,tw,14,3);cx.fill();cx.stroke();
+        // Pulsing left accent
+        cx.fillStyle=lv.color;cx.fillRect(L+4,atTop?ey:ey-14,3,14);
+        cx.fillStyle=lv.color;cx.textAlign='left';cx.fillText(txt,L+11,atTop?ey+10:ey-3);
         cx.restore();
       }
       return;
     }
-    // Zone fill — taller for strong levels
-    const zh=lv.strength===3?24:12;
+
+    const dist=Math.abs(lv.price-ST.price);
+    const isHot=dist<80; // very close to current price
+    const isMedium=dist<200&&dist>=80;
+
+    // ── ZONE FILL — gradient fade ─────────────────────────────────────────
     cx.save();
-    cx.globalAlpha=lv.strength===3?0.13:0.06;
+    const zh=lv.strength===3?28:14;
+    // Stronger fill when price is close
+    const fillAlpha=lv.strength===3
+      ?(isHot?0.22:isMedium?0.15:0.09)
+      :(isHot?0.12:0.05);
+    cx.globalAlpha=fillAlpha;
     cx.fillStyle=lv.color;
     cx.fillRect(L,y-zh/2,chartW,zh);
     cx.restore();
-    // Border line
+
+    // ── HOT ZONE GLOW — when price is very close ─────────────────────────
+    if(isHot&&lv.strength===3){
+      cx.save();
+      cx.globalAlpha=0.08;
+      cx.fillStyle=lv.color;
+      cx.fillRect(L,y-zh,chartW,zh*2);
+      cx.restore();
+    }
+
+    // ── BORDER LINE ───────────────────────────────────────────────────────
     cx.save();
-    cx.setLineDash(lv.strength===3?[]:[4,4]);
+    cx.setLineDash(lv.type==='tp'?[3,5]:lv.strength===3?[]:[5,4]);
     cx.strokeStyle=lv.color;
-    cx.lineWidth=lv.strength===3?1.5:0.8;
-    cx.globalAlpha=lv.strength===3?0.9:0.5;
+    cx.lineWidth=lv.strength===3?(isHot?2.5:1.8):0.8;
+    cx.globalAlpha=lv.strength===3?0.9:0.45;
     cx.beginPath();cx.moveTo(L,y);cx.lineTo(L+chartW,y);cx.stroke();
     cx.restore();
+
+    // ── HUNT ARROW — shows direction of expected hunt ────────────────────
+    if(lv.strength===3){
+      const arrowX=L+chartW-16;
+      const isAbove=lv.price>ST.price;
+      cx.save();
+      cx.fillStyle=lv.color;
+      cx.globalAlpha=isHot?0.9:0.5;
+      // Triangle arrow pointing toward where price will be hunted from
+      if(isAbove){
+        // Hunt from below going up — arrow points DOWN at the level (price comes UP to it)
+        cx.beginPath();
+        cx.moveTo(arrowX,y+8);cx.lineTo(arrowX-6,y-2);cx.lineTo(arrowX+6,y-2);
+        cx.closePath();cx.fill();
+      } else {
+        // Hunt from above going down — arrow points UP at the level
+        cx.beginPath();
+        cx.moveTo(arrowX,y-8);cx.lineTo(arrowX-6,y+2);cx.lineTo(arrowX+6,y+2);
+        cx.closePath();cx.fill();
+      }
+      cx.restore();
+    }
+
+    // ── RIGHT SIDE DISTANCE MARKER ────────────────────────────────────────
+    if(lv.strength>=2){
+      cx.save();
+      cx.font='600 8px "JetBrains Mono",monospace';
+      const distTxt='$'+Math.round(dist);
+      const dtw=cx.measureText(distTxt).width+6;
+      cx.fillStyle=isHot?lv.color+'40':'#1e2535';
+      cx.beginPath();rr(L+chartW+PW-dtw-4,y-7,dtw,13,2);cx.fill();
+      cx.fillStyle=isHot?lv.color:'#3a4259';
+      cx.textAlign='left';cx.fillText(distTxt,L+chartW+PW-dtw-1,y+4);
+      cx.restore();
+    }
   });
+
+  // ── LIQUIDITY HUNT TARGET LINES — connect current price to nearest targets ──
+  // Draw a visual "sniper line" from price to the nearest red and green levels
+  const nearestAbove=ST.levels.find(l=>l.price>ST.price&&l.strength===3);
+  const nearestBelow=[...ST.levels].reverse().find(l=>l.price<ST.price&&l.strength===3);
+  const nowY=py(ST.price);
+
+  if(nearestAbove){
+    const ty=py(nearestAbove.price);
+    const dist=Math.abs(nearestAbove.price-ST.price);
+    if(ty>=TOP&&ty<=BOT){
+      cx.save();
+      // Dotted sniper line
+      cx.setLineDash([2,4]);
+      cx.strokeStyle=nearestAbove.color+'55';
+      cx.lineWidth=1;
+      cx.beginPath();cx.moveTo(L+chartW-20,nowY);cx.lineTo(L+chartW-20,ty);cx.stroke();
+      // Hunt distance label
+      cx.setLineDash([]);
+      cx.fillStyle=nearestAbove.color+'cc';
+      cx.font='600 9px "JetBrains Mono",monospace';
+      cx.textAlign='center';
+      cx.fillText('$'+Math.round(dist),L+chartW-20,(nowY+ty)/2);
+      cx.restore();
+    }
+  }
+  if(nearestBelow){
+    const ty=py(nearestBelow.price);
+    const dist=Math.abs(nearestBelow.price-ST.price);
+    if(ty>=TOP&&ty<=BOT){
+      cx.save();
+      cx.setLineDash([2,4]);
+      cx.strokeStyle=nearestBelow.color+'55';
+      cx.lineWidth=1;
+      cx.beginPath();cx.moveTo(L+chartW-20,nowY);cx.lineTo(L+chartW-20,ty);cx.stroke();
+      cx.setLineDash([]);
+      cx.fillStyle=nearestBelow.color+'cc';
+      cx.font='600 9px "JetBrains Mono",monospace';
+      cx.textAlign='center';
+      cx.fillText('$'+Math.round(dist),L+chartW-20,(nowY+ty)/2);
+      cx.restore();
+    }
+  }
 
   // Candles
   candles.forEach((c,i)=>{
@@ -729,22 +832,22 @@ function draw(){
     lastY=y;
     cx.save();
 
-    // Plain English — what does this mean to you right now
+    // Plain English — instant meaning for scalper
     const meanings={
       'equal': lv.side==='above'
-        ? 'Stops above — price hunts here first'
-        : 'Stops below — bounce likely here',
+        ? '🔴 Stops above — price hunts here, then drops'
+        : '🟢 Stops below — price dips here, then rises',
       'round': lv.strength===3
-        ? 'Big round number — expect a reaction'
-        : 'Round number — watch for slow down',
-      'bidwall': 'Big buyers here — do not short below',
-      'askwall': 'Big sellers here — short on rejection',
+        ? '⚡ Big level — price always reacts here'
+        : '· Watch level — expect a slow down',
+      'bidwall': '🟢 Big buyers — price bounces up here',
+      'askwall': '🔴 Big sellers — price drops here',
       'stop':   lv.side==='above'
-        ? 'Longs will be stopped out here'
-        : 'Shorts will be stopped out here',
+        ? '🔴 Longs get stopped — price drops after'
+        : '🟢 Shorts get stopped — price rises after',
       'tp':     lv.side==='above'
-        ? 'Longs taking profit — selling pressure'
-        : 'Shorts taking profit — buying here',
+        ? '💜 Longs selling profit — exit longs here'
+        : '💜 Shorts buying back — exit shorts here',
     };
     const meaning = meanings[lv.type] || lv.label;
     const priceStr = fmt(lv.price);
