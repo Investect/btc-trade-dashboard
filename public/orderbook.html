@@ -767,24 +767,22 @@ function draw(){
   // Draw a visual "sniper line" from price to the nearest red and green levels
   const nearestAbove=ST.levels.find(l=>l.price>ST.price&&l.strength===3);
   const nearestBelow=[...ST.levels].reverse().find(l=>l.price<ST.price&&l.strength===3);
-  const nowY=py(ST.price);
+  const priceY=py(ST.price);
 
   if(nearestAbove){
     const ty=py(nearestAbove.price);
     const dist=Math.abs(nearestAbove.price-ST.price);
     if(ty>=TOP&&ty<=BOT){
       cx.save();
-      // Dotted sniper line
       cx.setLineDash([2,4]);
       cx.strokeStyle=nearestAbove.color+'55';
       cx.lineWidth=1;
-      cx.beginPath();cx.moveTo(L+chartW-20,nowY);cx.lineTo(L+chartW-20,ty);cx.stroke();
-      // Hunt distance label
+      cx.beginPath();cx.moveTo(L+chartW-20,priceY);cx.lineTo(L+chartW-20,ty);cx.stroke();
       cx.setLineDash([]);
       cx.fillStyle=nearestAbove.color+'cc';
       cx.font='600 9px "JetBrains Mono",monospace';
       cx.textAlign='center';
-      cx.fillText('$'+Math.round(dist),L+chartW-20,(nowY+ty)/2);
+      cx.fillText('$'+Math.round(dist),L+chartW-20,(priceY+ty)/2);
       cx.restore();
     }
   }
@@ -796,12 +794,12 @@ function draw(){
       cx.setLineDash([2,4]);
       cx.strokeStyle=nearestBelow.color+'55';
       cx.lineWidth=1;
-      cx.beginPath();cx.moveTo(L+chartW-20,nowY);cx.lineTo(L+chartW-20,ty);cx.stroke();
+      cx.beginPath();cx.moveTo(L+chartW-20,priceY);cx.lineTo(L+chartW-20,ty);cx.stroke();
       cx.setLineDash([]);
       cx.fillStyle=nearestBelow.color+'cc';
       cx.font='600 9px "JetBrains Mono",monospace';
       cx.textAlign='center';
-      cx.fillText('$'+Math.round(dist),L+chartW-20,(nowY+ty)/2);
+      cx.fillText('$'+Math.round(dist),L+chartW-20,(priceY+ty)/2);
       cx.restore();
     }
   }
