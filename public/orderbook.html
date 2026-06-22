@@ -75,8 +75,15 @@ html,body{height:100%;overflow:hidden;background:#070b11;color:#c9d1e0;font-fami
 /* PROJ sub-panel */
 #proj-sub{flex:1;min-height:0;display:flex;flex-direction:column;border-top:1px solid var(--br);overflow:hidden}
 #proj-sub .col-hdr{flex-shrink:0}
+#proj-body{flex:1;min-height:0;display:flex;overflow:hidden}
 #proj-canvas-wrap{flex:1;min-height:0;overflow:hidden;position:relative}
 #proj-c{display:block;width:100%;height:100%}
+#proj-history{width:52px;flex-shrink:0;border-left:1px solid var(--br);display:flex;flex-direction:column;overflow:hidden;background:var(--s1)}
+#proj-history-title{font-size:7px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:var(--dim2);padding:4px 0;text-align:center;border-bottom:1px solid var(--br);flex-shrink:0}
+#proj-history-list{flex:1;overflow:hidden;display:flex;flex-direction:column;justify-content:flex-end;padding:3px 0}
+.ph-row{display:flex;align-items:center;justify-content:center;padding:2px 4px;font-size:8px;font-weight:700;letter-spacing:.04em;border-radius:2px;margin:1px 4px}
+.ph-bull{color:#3dd68c;background:rgba(61,214,140,0.1);border:1px solid rgba(61,214,140,0.2)}
+.ph-bear{color:#f16b6b;background:rgba(241,107,107,0.1);border:1px solid rgba(241,107,107,0.2)}
 /* TAPE */
 .delta-wrap{padding:5px 10px;border-bottom:1px solid var(--br);flex-shrink:0}
 .delta-lbl-row{display:flex;justify-content:space-between;font-size:9px;font-weight:700;margin-bottom:3px}
@@ -204,7 +211,13 @@ html,body{height:100%;overflow:hidden;background:#070b11;color:#c9d1e0;font-fami
           <span id="proj-bias-tag" style="font-size:8px;padding:1px 5px;border-radius:2px;font-weight:700">—</span>
         </div>
       </div>
-      <div id="proj-canvas-wrap" style="min-height:160px"><canvas id="proj-c"></canvas></div>
+      <div id="proj-body">
+        <div id="proj-canvas-wrap"><canvas id="proj-c"></canvas></div>
+        <div id="proj-history">
+          <div id="proj-history-title">LAST<br>10</div>
+          <div id="proj-history-list"></div>
+        </div>
+      </div>
     </div>
   </div>
   <!-- COL 4: TAPE + ALERTS -->
@@ -650,6 +663,8 @@ function computeLevels(){
 }
 
 const sigCD={last:0,lastType:''};
+// Projection direction history — last 10
+const projHistory=[];
 
 function dismissSignal(){
   $('signal-pill').classList.remove('show');
@@ -1971,6 +1986,27 @@ function drawProjection(){
     const label=i===0?'hist':i===HIST-1?'now':isProj?'+'+(i-HIST+1)+projTF:'';
     if(label)pxc.fillText(label,x,BOT+12);
   });
+
+  // ── UPDATE PROJECTION HISTORY ────────────────────────────────────────────
+  // Record direction every ~5 seconds
+  const projNow=Math.floor(Date.now()/5000);
+  if(!drawProjection._lastLog||drawProjection._lastLog!==projNow){
+    drawProjection._lastLog=projNow;
+    projHistory.push(goingUp?'BULL':'BEAR');
+    if(projHistory.length>10) projHistory.shift();
+    // Update DOM
+    const list=$('proj-history-list');
+    if(list){
+      list.innerHTML='';
+      // Show oldest at top, newest at bottom
+      projHistory.forEach(dir=>{
+        const row=document.createElement('div');
+        row.className='ph-row '+(dir==='BULL'?'ph-bull':'ph-bear');
+        row.textContent=dir==='BULL'?'▲ BULL':'▼ BEAR';
+        list.appendChild(row);
+      });
+    }
+  }
 
   // ── UPDATE BIAS TAG ───────────────────────────────────────────────────────
   const biasEl=$('proj-bias-tag');
