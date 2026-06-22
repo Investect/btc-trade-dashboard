@@ -287,8 +287,8 @@ document.querySelectorAll('[data-tf]').forEach(b=>{
   b.addEventListener('click',()=>{
     curTF=b.dataset.tf;
     document.querySelectorAll('[data-tf]').forEach(x=>x.classList.remove('on'));
-    b.classList.add('on'); ST.candles=[];
-    resample(); updateTFL();
+    b.classList.add('on');
+    resample(); updateTFL(); // don't clear candles first — causes blank flash
   });
 });
 
@@ -406,6 +406,7 @@ function onTrade(d){
   addVol(price,qty,isSell);
   if(ST.tape.length>60)ST.tape=ST.tape.slice(0,60);
   ST.trades=ST.trades.filter(t=>t.t>Date.now()-30000);
+  if(ST.tape.length>200)ST.tape=ST.tape.slice(0,200); // keep more for candle building
   // For sub-minute TFs, trigger resample to advance live candle
   const tfMs=TF[curTF].ms;
   if(tfMs<60000){
@@ -645,12 +646,26 @@ function dismissSignal(){
   $('spf').style.opacity=0;
 }
 
-function fireSignal(type,why,entry,stop,target,flashCol){
-  if(Date.now()-sigCD.last<20000)return;
+// Single signal timer — stored globally so we can clear it
+let _sigTimer=null;
+let _sigFiredAt=0;
+
+function dismissSignal(){
+  $('signal-pill').classList.remove('show');
+  const f=$('spf');if(f){f.style.opacity=0;f.style.border='none';}
+  if(_sigTimer){clearInterval(_sigTimer);_sigTimer=null;}
+}
+
+function fireSignal(type,why,entry,stop,target){
+  if(Date.now()-sigCD.last<30000)return; // 30s cooldown
   sigCD.last=Date.now();sigCD.lastType=type;
   const isShort=type.includes('SHORT');
   const col=isShort?'#f16b6b':'#3dd68c';
-  // Update pill
+
+  // Clear any existing timer first
+  if(_sigTimer){clearInterval(_sigTimer);_sigTimer=null;}
+
+  // Update pill DOM in one batch
   const pill=$('signal-pill');
   $('spt').textContent=type;
   $('spt').style.color=col;
@@ -659,69 +674,91 @@ function fireSignal(type,why,entry,stop,target,flashCol){
   $('sig-entry').textContent=entry;
   $('sig-stop').textContent=stop;
   $('sig-target').textContent=target;
-  // Live age timer + auto-dismiss after 20s
-  const sigFiredAt=Date.now();
-  const timer=setInterval(()=>{
-    const age=Math.floor((Date.now()-sigFiredAt)/1000);
-    const te=$('sp-timer');
-    if(te){
-      te.textContent=age<60?age+'s ago':Math.floor(age/60)+'m '+( age%60)+'s ago';
-      te.style.color=age<10?'var(--up)':age<20?'var(--warn)':'var(--dn)';
-    }
-    if(age>=30){clearInterval(timer);dismissSignal();}
-  },1000);
+  $('sp-timer').textContent='just now';
+  $('sp-timer').style.color='#3dd68c';
   pill.classList.add('show');
-  // Flash screen
+
+  // Brief flash — only set once, don't keep updating
   const flash=$('spf');
-  flash.style.background=isShort?'rgba(241,107,107,0.06)':'rgba(61,214,140,0.06)';
-  flash.style.border='2px solid '+(isShort?'rgba(241,107,107,0.3)':'rgba(61,214,140,0.3)');
-  flash.style.opacity=1;
-  setTimeout(()=>{flash.style.opacity=0;},3000);
+  if(flash){
+    flash.style.background=isShort?'rgba(241,107,107,0.05)':'rgba(61,214,140,0.05)';
+    flash.style.border='1px solid '+(isShort?'rgba(241,107,107,0.25)':'rgba(61,214,140,0.25)');
+    flash.style.opacity=1;
+    setTimeout(()=>{if(flash)flash.style.opacity=0;},2000);
+  }
+
   // Arrow on chart
   arrows.push({price:ST.price,type:isShort?'short':'long',t:Date.now()});
-  // Alert
   alert2(isShort?'▼':'▲',type+' — '+entry,col);
   snd(isShort?'shortEntry':'shortEntry');
+
+  // Age timer — runs every second, lightweight
+  _sigFiredAt=Date.now();
+  _sigTimer=setInterval(()=>{
+    const age=Math.floor((Date.now()-_sigFiredAt)/1000);
+    const te=$('sp-timer');
+    if(te){
+      te.textContent=age<60?age+'s ago':Math.floor(age/60)+'m '+(age%60)+'s ago';
+      te.style.color=age<10?'#3dd68c':age<20?'#d4a94a':'#f16b6b';
+    }
+    if(age>=60){clearInterval(_sigTimer);_sigTimer=null;dismissSignal();}
+  },1000);
 }
 
 function checkSignals(delta){
   if(!ST.price||!ST.levels.length)return;
-  if(Date.now()-sigCD.last<20000)return;
+  if(Date.now()-sigCD.last<30000)return; // match 30s cooldown
 
   // ── SHORT SIGNAL ─────────────────────────────────────────────────────────
-  // Conditions: level above within $180, sell pressure, book bearish
-  const nearAbove=ST.levels.find(l=>l.side==='above'&&l.price>ST.price&&(l.price-ST.price)<180&&l.strength>=2);
-  if(nearAbove&&delta.sp>=55&&delta.bookBias<=1.0){
-    const stopAbove=fmt(nearAbove.price+50);
-    const tpBelow=ST.levels.slice().reverse().find(l=>l.price<ST.price&&(l.type==='bidwall'||l.type==='tp'||l.type==='equal'));
-    const tpTxt=tpBelow?fmt(tpBelow.price)+' ('+tpBelow.label+')':'next green level below';
-    const dist=nearAbove.price-ST.price;
+  // Requires: resistance within $150, sell pressure >= 60%, bearish book,
+  //           AND a TP target at least $50 below current price
+  const nearAbove=ST.levels.find(l=>l.side==='above'&&l.price>ST.price
+    &&(l.price-ST.price)<150&&l.strength>=2);
+  if(nearAbove&&delta.sp>=60&&delta.bookBias<=0.95){
+    // Find TP — must be at least $50 below current price
+    const tpBelow=ST.levels.slice().reverse().find(l=>
+      l.price<ST.price&&(ST.price-l.price)>=50&&
+      (l.type==='bidwall'||l.type==='tp'||l.type==='equal'||l.type==='round')
+    );
+    if(!tpBelow)return; // no viable TP — skip signal
+    const tpDist=ST.price-tpBelow.price;
+    const stopDist=50; // fixed $50 stop above level
+    const rr=(tpDist/stopDist).toFixed(1);
+    if(tpDist<50)return; // enforce 50pt minimum
+    const entryPt=ST.price;
     fireSignal(
       '▼  SHORT ENTRY',
-      nearAbove.label+' at '+fmt(nearAbove.price)+' — $'+Math.round(dist)+' above. Sell pressure '+delta.sp+'%.',
-      fmt(ST.price)+' — sell now at market',
-      stopAbove+' — above the level wick',
-      tpTxt,
-      '#f16b6b'
+      nearAbove.label+' at '+fmt(nearAbove.price)+'. Sell pressure '+delta.sp+'%. R:R = 1:'+rr,
+      fmt(entryPt)+' — sell at market now',
+      fmt(nearAbove.price+50)+' — $50 above resistance',
+      fmt(tpBelow.price)+' (+$'+Math.round(tpDist)+' · '+tpBelow.label+')'
     );
     return;
   }
 
   // ── LONG SIGNAL ──────────────────────────────────────────────────────────
-  // Conditions: level below within $180, buy pressure, book bullish
-  const nearBelow=ST.levels.slice().reverse().find(l=>l.side==='below'&&l.price<ST.price&&(ST.price-l.price)<180&&l.strength>=2);
-  if(nearBelow&&delta.bp>=55&&delta.bookBias>=1.0){
-    const stopBelow=fmt(nearBelow.price-50);
-    const tpAbove=ST.levels.find(l=>l.price>ST.price&&(l.type==='askwall'||l.type==='tp'||l.type==='equal'));
-    const tpTxt=tpAbove?fmt(tpAbove.price)+' ('+tpAbove.label+')':'next red level above';
-    const dist=ST.price-nearBelow.price;
+  // Requires: support within $150, buy pressure >= 60%, bullish book,
+  //           AND a TP target at least $50 above current price
+  const nearBelow=ST.levels.slice().reverse().find(l=>
+    l.side==='below'&&l.price<ST.price
+    &&(ST.price-l.price)<150&&l.strength>=2);
+  if(nearBelow&&delta.bp>=60&&delta.bookBias>=1.05){
+    const tpAbove=ST.levels.find(l=>
+      l.price>ST.price&&(l.price-ST.price)>=50&&
+      (l.type==='askwall'||l.type==='tp'||l.type==='equal'||l.type==='round')
+    );
+    if(!tpAbove)return; // no viable TP
+    const tpDist=tpAbove.price-ST.price;
+    const stopDist=50;
+    const rr=(tpDist/stopDist).toFixed(1);
+    if(tpDist<50)return;
+    const entryPt=ST.price;
     fireSignal(
       '▲  LONG ENTRY',
-      nearBelow.label+' at '+fmt(nearBelow.price)+' — $'+Math.round(dist)+' below. Buy pressure '+delta.bp+'%.',
-      fmt(ST.price)+' — buy now at market',
-      stopBelow+' — below the level wick',
-      tpTxt,
-      '#3dd68c'
+      nearBelow.label+' at '+fmt(nearBelow.price)+'. Buy pressure '+delta.bp+'%. R:R = 1:'+rr,
+      fmt(entryPt)+' — buy at market now',
+      fmt(nearBelow.price-50)+' — $50 below support',
+      fmt(tpAbove.price)+' (+$'+Math.round(tpDist)+' · '+tpAbove.label+')'
     );
   }
 }
@@ -1621,11 +1658,15 @@ function drawProjection(){
   const HIST=10, PROJ=8, PAD=6, TOP=14, BOT=H-16, chartH=BOT-TOP;
   const cw=(W-PAD*2)/(HIST+PROJ);
 
-  // ── GET HISTORY CANDLES ───────────────────────────────────────────────────
+  // ── GET HISTORY CANDLES — use same candles as main chart for consistency ──
   const ms=projTFms[projTF];
   let hist=[];
-  if(ms<=60000) hist=ST.candles.slice(-HIST);
-  else {
+  // If projection TF matches main chart TF, use ST.candles directly
+  if(ms===TF[curTF].ms){
+    hist=ST.candles.slice(-HIST);
+  } else if(ms<=60000){
+    hist=ST.candles.slice(-HIST);
+  } else {
     const agg=[];let cur=null;
     ST.raw1m.forEach(k=>{
       const bkt=Math.floor(k.t/ms)*ms;
@@ -1663,7 +1704,10 @@ function drawProjection(){
         if(d<0&&vel<0&&prox<avgRange*0.3) vel*=b.strength===3?-0.6:-0.3;
       }
     });
-    const noise=(Math.random()-0.48)*avgRange*0.2; // slight bias toward momentum
+    // Use time-seeded noise so projection is stable within a candle but updates each candle
+    const seed=(Date.now()/(TF[curTF].ms||15000)|0)+i;
+    const pseudoR=((seed*2654435761)>>>0)/4294967296; // fast hash
+    const noise=(pseudoR-0.48)*avgRange*0.2;
     const cl=price+vel+noise;
     const bsz=Math.abs(cl-o)||avgRange*0.05;
     proj.push({o,c:cl,h:Math.max(o,cl)+bsz*0.3*Math.random(),l:Math.min(o,cl)-bsz*0.3*Math.random()});
@@ -1872,7 +1916,11 @@ function renderPriority(){
 // Patch tick to include priority render
 const _origTick = tick;
 // Redefine tick
-window.tick = function(){computeLevels();checkWalls();checkProx();const d=updateDelta();checkSignals(d);renderLevels();renderPriority();draw();drawProjection();analyseSMC();}
+window.tick = function(){
+  // Rebuild sub-minute candles every tick so they always advance with time
+  if(TF[curTF].ms<60000) resample();
+  computeLevels();checkWalls();checkProx();const d=updateDelta();checkSignals(d);renderLevels();renderPriority();draw();drawProjection();analyseSMC();
+}
 setInterval(window.tick, 100);
 
 </script>
