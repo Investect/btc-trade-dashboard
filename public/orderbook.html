@@ -62,7 +62,7 @@ html,body{height:100%;overflow:hidden;background:#070b11;color:#c9d1e0;font-fami
 #conn-lbl{font-size:9px;color:var(--dim);letter-spacing:.04em}
 
 /* ── MAIN 4-COLUMN GRID ── */
-#main{display:grid;grid-template-columns:180px 1fr 200px 240px 220px;overflow:hidden;gap:1px;background:var(--br)}
+#main{display:grid;grid-template-columns:180px 1fr 260px 220px;overflow:hidden;gap:1px;background:var(--br)}
 
 /* ── PRIORITY COLUMN (leftmost) ── */
 #priority-col{background:var(--bg);display:flex;flex-direction:column;overflow:hidden}
@@ -93,6 +93,7 @@ canvas{display:block;width:100%;height:100%}
 
 /* ── LEVELS ── */
 #liq-col{background:var(--bg);display:flex;flex-direction:column;overflow:hidden}
+#liq-inner{flex:1;display:flex;flex-direction:column;overflow:hidden;min-height:0}
 #levels-wrap{flex:1;overflow-y:auto;min-height:0}
 #levels-wrap::-webkit-scrollbar{width:2px}
 #levels-wrap::-webkit-scrollbar-thumb{background:var(--br2)}
@@ -224,23 +225,21 @@ canvas{display:block;width:100%;height:100%}
       <span class="col-hdr-title">All Levels</span>
       <span style="font-size:8px;color:var(--up);background:var(--up-dim);border:1px solid rgba(61,214,140,0.2);padding:1px 6px;border-radius:2px" id="lvl-count">0</span>
     </div>
-    <div id="levels-wrap"><div id="levels-list"></div></div>
-  </div>
-
-  <!-- COL 4: PROJECTION CHART -->
-  <div id="proj-panel">
-    <div class="col-hdr" style="justify-content:space-between">
-      <span class="col-hdr-title">Price Projection</span>
-      <span id="proj-bias-tag" style="font-size:8px;padding:1px 6px;border-radius:2px;font-weight:700">—</span>
+    <div id="levels-wrap" style="flex:1;min-height:0;overflow-y:auto"><div id="levels-list"></div></div>
+    <!-- PROJECTION embedded bottom half -->
+    <div style="flex-shrink:0;height:50%;border-top:1px solid var(--br);display:flex;flex-direction:column;min-height:0">
+      <div class="col-hdr" style="justify-content:space-between;flex-shrink:0">
+        <span class="col-hdr-title">Price Projection</span>
+        <div style="display:flex;align-items:center;gap:4px">
+          <button class="tb-btn on" id="ptf-15s" onclick="setProjTF('15s')">15s</button>
+          <button class="tb-btn" id="ptf-30s" onclick="setProjTF('30s')">30s</button>
+          <button class="tb-btn" id="ptf-1m"  onclick="setProjTF('1m')">1m</button>
+          <button class="tb-btn" id="ptf-5m"  onclick="setProjTF('5m')">5m</button>
+          <span id="proj-bias-tag" style="font-size:8px;padding:1px 6px;border-radius:2px;font-weight:700;margin-left:2px">—</span>
+        </div>
+      </div>
+      <div id="proj-canvas-wrap" style="flex:1;min-height:0;position:relative"><canvas id="proj-c" style="display:block;width:100%;height:100%"></canvas></div>
     </div>
-    <div class="proj-tf-row">
-      <button class="tb-btn on" id="ptf-15s" onclick="setProjTF('15s')">15s</button>
-      <button class="tb-btn" id="ptf-30s" onclick="setProjTF('30s')">30s</button>
-      <button class="tb-btn" id="ptf-1m"  onclick="setProjTF('1m')">1m</button>
-      <button class="tb-btn" id="ptf-5m"  onclick="setProjTF('5m')">5m</button>
-    </div>
-    <div id="proj-canvas-wrap"><canvas id="proj-c"></canvas></div>
-    <div id="proj-label">momentum · delta · liquidity</div>
   </div>
 
   <!-- COL 5: TAPE + ALERTS -->
@@ -733,15 +732,11 @@ function draw(){
       const fibRange  = Math.abs(fromPrice - toPrice);
 
       if(fibRange > 5){ // only draw if meaningful range
-        // Full fib levels — 0.0, 0.236, 0.382, 0.5, 0.618, 0.786, 1.0
+        // Only 3 key levels — 0.0 (start), 0.5 (mid), 0.618 (golden)
         const fibLevels=[
-          {r:0,    col:'#c4b5fd', lw:1.5, label:'0.0   — Start'},
-          {r:0.236,col:'#6b7fa8', lw:1,   label:'0.236'},
-          {r:0.382,col:'#7c8db0', lw:1,   label:'0.382'},
-          {r:0.5,  col:'#a78bfa', lw:2,   label:'0.5   — Mid'},
-          {r:0.618,col:'#c4b5fd', lw:2.5, label:'0.618 ★'},
-          {r:0.786,col:'#7c8db0', lw:1,   label:'0.786'},
-          {r:1.0,  col:'#c4b5fd', lw:1.5, label:'1.0   — End'},
+          {r:0,    col:'#c4b5fd', lw:2,   label:'0.0  START'},
+          {r:0.5,  col:'#a78bfa', lw:2,   label:'0.5  MID'},
+          {r:0.618,col:'#e0af68', lw:2.5, label:'0.618 ★'},
         ];
 
         // Calculate price for each fib level
@@ -1458,7 +1453,7 @@ function setProjTF(tf){
 function resizeProj(){
   if(!pvc) return;
   const w = document.getElementById('proj-canvas-wrap');
-  if(!w) return;
+  if(!w||w.offsetWidth===0||w.offsetHeight===0) return;
   const dpr = devicePixelRatio||1;
   pvc.width = w.offsetWidth*dpr;
   pvc.height = w.offsetHeight*dpr;
@@ -1468,7 +1463,8 @@ function resizeProj(){
 
 function drawProjection(){
   if(!pxc||!ST.price||ST.candles.length<6) return;
-  resizeProj();
+  resizeProj(); // always resize — panel may have been hidden then shown
+  if(!pvc||pvc.width===0||pvc.height===0) return;
   const W=pvc.width/(devicePixelRatio||1), H=pvc.height/(devicePixelRatio||1);
   const dpr=devicePixelRatio||1;
   pxc.clearRect(0,0,pvc.width,pvc.height);
@@ -1785,6 +1781,9 @@ function drawProjection(){
 }
 
 window.addEventListener('resize', resizeProj);
+// Retry resize after layout settles
+setTimeout(resizeProj, 500);
+setTimeout(resizeProj, 1500);
 
 // ── PRIORITY PANEL ───────────────────────────────────────────────────────────
 let priTF = 'all'; // all | close | book | eq
