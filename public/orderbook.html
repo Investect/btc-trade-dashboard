@@ -1648,27 +1648,31 @@ function resizeProj(){
 
 function drawProjection(){
   if(!pvc||!pxc) initProjCanvas();
-  if(!pxc||!ST.price||ST.raw1m.length<6) return;
+  if(!pxc||!ST.price||ST.candles.length<4) return;
   resizeProj();
-  const W=pvc.width/(devicePixelRatio||1), H=pvc.height/(devicePixelRatio||1);
-  if(W<20||H<20) return;
   const dpr=devicePixelRatio||1;
+  const W=pvc.width/dpr, H=pvc.height/dpr;
+  if(W<60||H<60) return;
+
   pxc.setTransform(1,0,0,1,0,0);
   pxc.clearRect(0,0,pvc.width,pvc.height);
   pxc.setTransform(dpr,0,0,dpr,0,0);
 
-  const HIST=10, PROJ=8, PAD=6, TOP=14, BOT=H-16, chartH=BOT-TOP;
-  const cw=(W-PAD*2)/(HIST+PROJ);
+  // ── LAYOUT ────────────────────────────────────────────────────────────────
+  const HIST=6, PROJ=8;
+  const PAD_L=4, PAD_R=52, TOP=8, BOT=H-18;
+  const chartH=BOT-TOP;
+  const totalCols=HIST+PROJ;
+  const cw=(W-PAD_L-PAD_R)/totalCols;
+  const bw=Math.max(3,Math.min(cw*0.7,20));
+  const divX=PAD_L+HIST*cw;
 
-  // ── GET HISTORY CANDLES — use same candles as main chart for consistency ──
+  // ── GET HISTORY ───────────────────────────────────────────────────────────
   const ms=projTFms[projTF];
   let hist=[];
-  // If projection TF matches main chart TF, use ST.candles directly
   if(ms===TF[curTF].ms){
     hist=ST.candles.slice(-HIST);
-  } else if(ms<=60000){
-    hist=ST.candles.slice(-HIST);
-  } else {
+  } else if(ms>60000){
     const agg=[];let cur=null;
     ST.raw1m.forEach(k=>{
       const bkt=Math.floor(k.t/ms)*ms;
@@ -1677,137 +1681,192 @@ function drawProjection(){
     });
     if(cur)agg.push(cur);
     hist=agg.slice(-HIST);
+  } else {
+    hist=ST.candles.slice(-HIST);
   }
-  if(hist.length<3){hist=ST.candles.slice(-HIST);}
-  if(hist.length<3) return;
+  if(hist.length<2) hist=ST.candles.slice(-HIST);
+  if(hist.length<2) return;
 
-  // ── BUILD PROJECTION ─────────────────────────────────────────────────────
+  // ── BUILD PROJECTION ──────────────────────────────────────────────────────
   const rc=hist.slice(-6);
-  const avgRange=rc.reduce((s,k)=>s+(k.h-k.l),0)/rc.length||10;
+  const avgRange=rc.reduce((s,k)=>s+(k.h-k.l),0)/rc.length||20;
   const closes=rc.map(k=>k.c);
-  const slope=(closes[closes.length-1]-closes[0])/(closes.length-1);
+  const slope=(closes[closes.length-1]-closes[0])/(closes.length||1);
   let bv=0,sv=0; ST.trades.forEach(t=>t.isSell?sv+=t.qty:bv+=t.qty);
   const db=(bv-sv)/(bv+sv||1);
-  const vel0=slope*0.6+db*avgRange*0.25;
-  const goingUp=vel0>=0;
+  // Momentum combines trend slope + delta bias
+  const initVel=slope*0.5+db*avgRange*0.2;
+  const goingUp=initVel>=0;
 
-  // Barriers from levels
-  const barriers=ST.levels.filter(l=>Math.abs(l.price-ST.price)<avgRange*PROJ*1.2);
+  // Barriers — levels that cause bounces
+  const barriers=ST.levels.filter(l=>Math.abs(l.price-ST.price)<avgRange*PROJ*1.5);
 
-  const proj=[];let price=ST.price,vel=vel0;
+  const proj=[];
+  let price=ST.price, vel=initVel;
   for(let i=0;i<PROJ;i++){
     const o=price;
-    vel=vel*0.85+slope*Math.pow(0.88,i)*0.15+db*avgRange*0.05;
-    vel=Math.max(-avgRange*0.5,Math.min(avgRange*0.5,vel));
+    // Decay momentum
+    vel=vel*0.82+slope*Math.pow(0.85,i)*0.12+db*avgRange*0.06;
+    vel=Math.max(-avgRange*0.55,Math.min(avgRange*0.55,vel));
+    // Level rejection
     barriers.forEach(b=>{
       const d=b.price-price,prox=Math.abs(d);
-      if(prox<avgRange*0.6){
-        if(d>0&&vel>0&&prox<avgRange*0.3) vel*=b.strength===3?-0.6:-0.3;
-        if(d<0&&vel<0&&prox<avgRange*0.3) vel*=b.strength===3?-0.6:-0.3;
+      if(prox<avgRange*0.5){
+        if(d>0&&vel>0&&prox<avgRange*0.25){vel*=b.strength===3?-0.55:-0.25;}
+        if(d<0&&vel<0&&prox<avgRange*0.25){vel*=b.strength===3?-0.55:-0.25;}
       }
     });
-    // Use time-seeded noise so projection is stable within a candle but updates each candle
-    const seed=(Date.now()/(TF[curTF].ms||15000)|0)+i;
-    const pseudoR=((seed*2654435761)>>>0)/4294967296; // fast hash
-    const noise=(pseudoR-0.48)*avgRange*0.2;
+    // Stable noise using hash so it doesn't flicker every frame
+    const seed=((Math.floor(Date.now()/5000)+i)*2654435761)>>>0;
+    const noise=(seed/4294967296-0.5)*avgRange*0.15;
     const cl=price+vel+noise;
-    const bsz=Math.abs(cl-o)||avgRange*0.05;
-    proj.push({o,c:cl,h:Math.max(o,cl)+bsz*0.3*Math.random(),l:Math.min(o,cl)-bsz*0.3*Math.random()});
-    price=cl;vel*=0.9;
+    const bodyH=Math.abs(cl-o)||avgRange*0.05;
+    proj.push({
+      o,c:cl,
+      h:Math.max(o,cl)+bodyH*0.35*((seed>>8&255)/255),
+      l:Math.min(o,cl)-bodyH*0.35*((seed>>16&255)/255)
+    });
+    price=cl; vel*=0.88;
   }
 
   // ── Y SCALE ───────────────────────────────────────────────────────────────
-  const all=[...hist,...proj];
-  const lo2=Math.min(...all.map(k=>k.l))-avgRange*0.2;
-  const hi2=Math.max(...all.map(k=>k.h))+avgRange*0.2;
-  const rng2=hi2-lo2||1;
+  const allP=[...hist,...proj];
+  const lo2=Math.min(...allP.map(k=>k.l))*0.9995;
+  const hi2=Math.max(...allP.map(k=>k.h))*1.0005;
+  const rng2=hi2-lo2||50;
   const py2=p=>TOP+(1-(p-lo2)/rng2)*chartH;
 
-  // Background
+  // ── BACKGROUND ────────────────────────────────────────────────────────────
   pxc.fillStyle='#070b11';pxc.fillRect(0,0,W,H);
+  // Projection zone tint
+  pxc.fillStyle=goingUp?'rgba(61,214,140,0.03)':'rgba(241,107,107,0.03)';
+  pxc.fillRect(divX,TOP,W-PAD_R-divX,chartH);
 
-  // Grid lines
-  for(let i=0;i<=3;i++){
-    const pv=lo2+rng2/3*i,y=py2(pv);
-    pxc.strokeStyle='#111825';pxc.lineWidth=1;pxc.setLineDash([]);
-    pxc.beginPath();pxc.moveTo(PAD,y);pxc.lineTo(W-PAD,y);pxc.stroke();
-    pxc.fillStyle='#2d3748';pxc.font='9px "JetBrains Mono",monospace';pxc.textAlign='right';
-    pxc.fillText(fmt(pv),W-1,y-2);
+  // ── GRID ──────────────────────────────────────────────────────────────────
+  const gridSteps=4;
+  for(let i=0;i<=gridSteps;i++){
+    const pv=lo2+(rng2/gridSteps)*i;
+    const y=py2(pv);
+    pxc.strokeStyle='#151e2d';pxc.lineWidth=1;pxc.setLineDash([]);
+    pxc.beginPath();pxc.moveTo(PAD_L,y);pxc.lineTo(W-PAD_R,y);pxc.stroke();
+    // Price label on right
+    pxc.fillStyle='#3a4a60';pxc.font='700 8px "JetBrains Mono",monospace';
+    pxc.textAlign='left';pxc.fillText(fmt(pv),W-PAD_R+2,y+3);
   }
 
-  // Divider
-  const divX=PAD+HIST*cw;
-  pxc.fillStyle=goingUp?'rgba(125,207,255,0.04)':'rgba(224,175,104,0.04)';
-  pxc.fillRect(divX,TOP,W-PAD-divX,chartH);
-  pxc.strokeStyle='#2a3a50';pxc.lineWidth=1.5;pxc.setLineDash([]);
+  // ── NOW DIVIDER ───────────────────────────────────────────────────────────
+  pxc.strokeStyle='#2a3a52';pxc.lineWidth=1.5;pxc.setLineDash([3,3]);
   pxc.beginPath();pxc.moveTo(divX,TOP);pxc.lineTo(divX,BOT);pxc.stroke();
-  pxc.fillStyle='#3a4a60';pxc.font='700 8px "JetBrains Mono",monospace';pxc.textAlign='center';
-  pxc.fillText('NOW',divX,TOP+8);
+  pxc.setLineDash([]);
+  pxc.fillStyle='#1e2d40';
+  pxc.beginPath();pxc.fillRect(divX-12,TOP,24,14);
+  pxc.fillStyle='#5b8dee';pxc.font='700 8px "JetBrains Mono",monospace';pxc.textAlign='center';
+  pxc.fillText('NOW',divX,TOP+10);
 
-  // Historical candles
-  const bw=Math.max(4,cw*0.75);
+  // ── HISTORICAL CANDLES ────────────────────────────────────────────────────
   hist.forEach((k,i)=>{
-    const x=PAD+i*cw+cw/2;
+    const x=PAD_L+(i+0.5)*cw;
     const bull=k.c>=k.o;
-    const recent=i>=hist.length-3;
-    const col=recent?(bull?'#3dd68c':'#f16b6b'):(bull?'rgba(61,214,140,0.45)':'rgba(241,107,107,0.45)');
+    const isRecent=i>=hist.length-2;
+    const col=bull
+      ?(isRecent?'#3dd68c':'rgba(61,214,140,0.55)')
+      :(isRecent?'#f16b6b':'rgba(241,107,107,0.55)');
+    const fillCol=bull
+      ?(isRecent?'rgba(61,214,140,0.25)':'rgba(61,214,140,0.1)')
+      :(isRecent?'rgba(241,107,107,0.25)':'rgba(241,107,107,0.1)');
     const oY=py2(k.o),cY=py2(k.c),hY=py2(k.h),lY=py2(k.l);
+    // Wick
     pxc.strokeStyle=col;pxc.lineWidth=1;pxc.setLineDash([]);
     pxc.beginPath();pxc.moveTo(x,hY);pxc.lineTo(x,lY);pxc.stroke();
-    const top2=Math.min(oY,cY),ht2=Math.max(Math.abs(cY-oY),1.5);
-    pxc.fillStyle=recent?(bull?'rgba(61,214,140,0.15)':'rgba(241,107,107,0.15)'):(bull?'rgba(61,214,140,0.06)':'rgba(241,107,107,0.06)');
-    pxc.fillRect(x-bw/2,top2,bw,ht2);
-    pxc.strokeRect(x-bw/2,top2,bw,ht2);
+    // Body
+    const top2=Math.min(oY,cY),ht2=Math.max(Math.abs(cY-oY),2);
+    pxc.fillStyle=fillCol;pxc.fillRect(x-bw/2,top2,bw,ht2);
+    pxc.strokeStyle=col;pxc.lineWidth=isRecent?1.5:1;pxc.strokeRect(x-bw/2,top2,bw,ht2);
   });
 
-  // Confidence cone
-  pxc.save();pxc.globalAlpha=0.06;pxc.fillStyle=goingUp?'#7dcfff':'#e0af68';
-  pxc.beginPath();pxc.moveTo(divX,py2(ST.price));
-  proj.forEach((_,i)=>pxc.lineTo(divX+(i+1)*cw,py2(proj[i].c)-avgRange*(i+1)*0.1));
-  [...proj].reverse().forEach((_,i)=>{const ri=proj.length-1-i;pxc.lineTo(divX+(ri+1)*cw,py2(proj[ri].c)+avgRange*(ri+1)*0.1);});
-  pxc.closePath();pxc.fill();pxc.restore();
-
-  // Projection candles — blue=bull, yellow=bear
+  // ── PROJECTED CANDLES — blue=bull, amber=bear ─────────────────────────────
   proj.forEach((k,i)=>{
-    const x=divX+(i+0.5)*cw+cw/2;
+    const x=divX+(i+0.5)*cw;
     const bull=k.c>=k.o;
-    const alpha=0.9-(i/PROJ)*0.5;
-    const col=bull?`rgba(125,207,255,${alpha})`:`rgba(224,175,104,${alpha})`;
+    const fade=1-(i/PROJ)*0.5;
+    const col=bull
+      ?`rgba(125,207,255,${fade})`    // cyan-blue for projected bull
+      :`rgba(224,175,104,${fade})`;   // amber for projected bear
+    const fillCol=bull
+      ?`rgba(125,207,255,${fade*0.2})`
+      :`rgba(224,175,104,${fade*0.2})`;
     const oY=py2(k.o),cY=py2(k.c),hY=py2(k.h),lY=py2(k.l);
-    pxc.strokeStyle=col;pxc.lineWidth=0.8;pxc.setLineDash([]);
+    // Wick
+    pxc.strokeStyle=col;pxc.lineWidth=1;pxc.setLineDash([]);
     pxc.beginPath();pxc.moveTo(x,hY);pxc.lineTo(x,lY);pxc.stroke();
-    const top2=Math.min(oY,cY),ht2=Math.max(Math.abs(cY-oY),1.5);
-    pxc.fillStyle=bull?`rgba(125,207,255,${alpha*0.12})`:`rgba(224,175,104,${alpha*0.12})`;
-    pxc.fillRect(x-bw/2,top2,bw,ht2);
-    pxc.strokeRect(x-bw/2,top2,bw,ht2);
+    // Body — solid filled for readability
+    const top2=Math.min(oY,cY),ht2=Math.max(Math.abs(cY-oY),3);
+    pxc.fillStyle=fillCol;pxc.fillRect(x-bw/2,top2,bw,ht2);
+    pxc.strokeStyle=col;pxc.lineWidth=1.2;pxc.strokeRect(x-bw/2,top2,bw,ht2);
+    // Candle number label on first proj candle
+    if(i===0){
+      pxc.fillStyle=col;pxc.font='700 7px "JetBrains Mono",monospace';pxc.textAlign='center';
+      pxc.fillText('PROJ',x,bull?hY-3:lY+9);
+    }
   });
 
-  // Projection path
+  // ── PROJECTION PATH LINE ─────────────────────────────────────────────────
   pxc.save();
-  pxc.shadowColor=goingUp?'#7dcfff':'#e0af68';pxc.shadowBlur=5;
-  pxc.strokeStyle=goingUp?'rgba(125,207,255,0.7)':'rgba(224,175,104,0.7)';
-  pxc.lineWidth=1.5;pxc.setLineDash([4,3]);
+  pxc.shadowColor=goingUp?'#7dcfff':'#e0af68';pxc.shadowBlur=4;
+  pxc.strokeStyle=goingUp?'rgba(125,207,255,0.6)':'rgba(224,175,104,0.6)';
+  pxc.lineWidth=1.5;pxc.setLineDash([3,3]);
   pxc.beginPath();pxc.moveTo(divX,py2(ST.price));
   proj.forEach((_,i)=>pxc.lineTo(divX+(i+1)*cw,py2(proj[i].c)));
   pxc.stroke();pxc.restore();
 
-  // End label
+  // ── CURRENT PRICE LINE ────────────────────────────────────────────────────
+  const cpY=py2(ST.price);
+  pxc.strokeStyle='rgba(91,141,238,0.5)';pxc.lineWidth=1;pxc.setLineDash([2,3]);
+  pxc.beginPath();pxc.moveTo(PAD_L,cpY);pxc.lineTo(W-PAD_R,cpY);pxc.stroke();
+  pxc.setLineDash([]);
+
+  // ── END PRICE LABEL ───────────────────────────────────────────────────────
   const endP=proj[proj.length-1].c;
-  const endY2=py2(endP);
+  const endY=py2(endP);
   const ecol=goingUp?'#7dcfff':'#e0af68';
-  const etxt=(goingUp?'▲ ':'▼ ')+fmt(endP);
-  pxc.font='700 10px "JetBrains Mono",monospace';
+  const chg=endP-ST.price;
+  const etxt=(chg>=0?'▲ +':' ▼ ')+Math.abs(Math.round(chg));
+  pxc.font='700 9px "JetBrains Mono",monospace';
   const etw=pxc.measureText(etxt).width+8;
   pxc.fillStyle=goingUp?'rgba(125,207,255,0.15)':'rgba(224,175,104,0.15)';
   pxc.strokeStyle=ecol;pxc.lineWidth=1;pxc.setLineDash([]);
-  pxc.beginPath();rr(W-PAD-etw,endY2-8,etw,14,2);pxc.fill();pxc.stroke();
-  pxc.fillStyle=ecol;pxc.textAlign='left';pxc.fillText(etxt,W-PAD-etw+4,endY2+3.5);
+  pxc.beginPath();pxc.rect(W-PAD_R+1,endY-8,etw,15);pxc.fill();pxc.stroke();
+  pxc.fillStyle=ecol;pxc.textAlign='left';pxc.fillText(etxt,W-PAD_R+4,endY+4);
 
-  // Bias tag
+  // ── NEAREST TARGET LINE ───────────────────────────────────────────────────
+  const tgt=goingUp
+    ?ST.levels.find(l=>l.price>ST.price&&l.strength>=2)
+    :[...ST.levels].reverse().find(l=>l.price<ST.price&&l.strength>=2);
+  if(tgt){
+    const ty=py2(tgt.price);
+    if(ty>=TOP&&ty<=BOT){
+      pxc.strokeStyle=tgt.color+'66';pxc.lineWidth=1;pxc.setLineDash([4,3]);
+      pxc.beginPath();pxc.moveTo(divX,ty);pxc.lineTo(W-PAD_R,ty);pxc.stroke();
+      pxc.setLineDash([]);
+      pxc.fillStyle=tgt.color+'cc';pxc.font='600 8px "JetBrains Mono",monospace';
+      pxc.textAlign='right';pxc.fillText(fmt(tgt.price),W-PAD_R-2,ty-2);
+    }
+  }
+
+  // ── X AXIS LABELS ─────────────────────────────────────────────────────────
+  [HIST-1,HIST,HIST+PROJ-1].forEach(i=>{
+    const x=PAD_L+(i+0.5)*cw;
+    const isProj=i>=HIST;
+    pxc.fillStyle=isProj?(goingUp?'rgba(125,207,255,0.5)':'rgba(224,175,104,0.5)'):'#2d3748';
+    pxc.font='7px "JetBrains Mono",monospace';pxc.textAlign='center';
+    pxc.fillText(isProj?'+'+(i-HIST+1)+projTF:'now',x,BOT+12);
+  });
+
+  // ── BIAS TAG UPDATE ───────────────────────────────────────────────────────
   const biasEl=$('proj-bias-tag');
   if(biasEl){
-    const chgPct=((endP-ST.price)/ST.price*100).toFixed(2);
-    biasEl.textContent=(goingUp?'▲ +':'▼ ')+chgPct+'%';
+    const pct=((endP-ST.price)/ST.price*100).toFixed(2);
+    biasEl.textContent=(goingUp?'▲ +':'▼ ')+pct+'%';
     biasEl.style.background=goingUp?'rgba(125,207,255,0.12)':'rgba(224,175,104,0.12)';
     biasEl.style.color=goingUp?'#7dcfff':'#e0af68';
     biasEl.style.border='1px solid '+(goingUp?'rgba(125,207,255,0.3)':'rgba(224,175,104,0.3)');
