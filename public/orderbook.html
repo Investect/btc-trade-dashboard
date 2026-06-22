@@ -168,6 +168,7 @@ html,body{height:100%;overflow:hidden;background:#070b11;color:#c9d1e0;font-fami
     <div class="col-hdr">
       <span class="col-hdr-title">Next Targets</span>
       <div style="display:flex;gap:3px;align-items:center">
+        <span id="pri-count" style="font-size:8px;color:var(--up);background:var(--up-dim);border:1px solid rgba(61,214,140,0.2);padding:1px 5px;border-radius:2px">0</span>
         <button class="tb-btn on" id="pri-tf-all" onclick="setPriTF('all')">All</button>
         <button class="tb-btn" id="pri-tf-close" onclick="setPriTF('close')">Close</button>
         <button class="tb-btn" id="pri-tf-book" onclick="setPriTF('book')">Book</button>
@@ -1911,7 +1912,7 @@ function renderPriority(){
 
   list.innerHTML = '';
   list.appendChild(frag);
-  document.getElementById('pri-count').textContent = ST.levels.length;
+  const pc=document.getElementById('pri-count');if(pc)pc.textContent=ST.levels.length;
 }
 
 // Patch tick to include priority render
