@@ -1791,10 +1791,11 @@ function drawProjection(){
     const body=Math.abs(cl-o)||atr*0.05;
     // Wick size proportional to ATR and session volatility
     const wickScale=atr*0.25*sessVol*(1-(i/PROJ)*0.3); // wicks shrink farther out
-    const upperWickSeed=((seed*6364136223846793005n+1442695040888963407n)&0xFFFFFFFFn)||seed;
-    const lowerWickSeed=((seed*2862933555777941757n+3037000493n)&0xFFFFFFFFn)||seed+1;
-    const upperWick=Math.abs((Number(upperWickSeed)%1000)/1000)*wickScale;
-    const lowerWick=Math.abs((Number(lowerWickSeed)%1000)/1000)*wickScale;
+    // Simple integer hash for wick sizes — no BigInt
+    const upperWickSeed=((seed^(seed>>>16))*0x45d9f3b)>>>0;
+    const lowerWickSeed=((seed^(seed>>>13))*0xc2b2ae35)>>>0;
+    const upperWick=(upperWickSeed%1000/1000)*wickScale;
+    const lowerWick=(lowerWickSeed%1000/1000)*wickScale;
 
     proj.push({
       o, c:cl,
