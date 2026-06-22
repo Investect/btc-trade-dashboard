@@ -306,8 +306,8 @@ const ST={
   pbids:new Map(),pasks:new Map(),
   trades:[],tape:[],
   raw1m:[],candles:[],
-  // Real-time candle buffer: Map<bucketTimestamp, {t,o,h,l,c}>
-  candleBuffer:new Map(),
+  // Separate candle buffers per TF (avoids 30s contaminating 15s)
+  buf15:new Map(), buf30:new Map(),
   volProfile:new Map(),
   levels:[],tps:0,
 };
@@ -339,13 +339,13 @@ async function fetchHistoricCandles(){
       }
       // Seed volume profile from history
       ST.raw1m.forEach(k=>addKlineVol(k));
-      // Pre-seed candle buffer from 1m history for instant 15s/30s display
+      // Pre-seed per-TF buffers from 1m history
       ST.raw1m.slice(-40).forEach(k=>{
-        [15000,30000].forEach(ms=>{
+        [[15000,ST.buf15],[30000,ST.buf30]].forEach(([ms,buf])=>{
           const n=Math.round(60000/ms),step=(k.c-k.o)/n,rng=k.h-k.l;
           for(let i=0;i<n;i++){
             const t=k.t+ms*i,o=k.o+step*i,cl=k.o+step*(i+1);
-            ST.candleBuffer.set(t,{t,o,c:cl,h:Math.min(Math.max(o,cl)+rng*0.25,k.h),l:Math.max(Math.min(o,cl)-rng*0.25,k.l)});
+            buf.set(t,{t,o,c:cl,h:Math.min(Math.max(o,cl)+rng*0.25,k.h),l:Math.max(Math.min(o,cl)-rng*0.25,k.l)});
           }
         });
       });
@@ -420,21 +420,19 @@ function onTrade(d){
   if(ST.tape.length>120)ST.tape=ST.tape.slice(0,120);
   ST.trades=ST.trades.filter(t=>t.t>now-30000);
 
-  // ── Update real-time candle buffer for 15s and 30s TFs ───────────────────
-  [15000,30000].forEach(ms=>{
+  // ── Update real-time candle buffers ─────────────────────────────────────
+  [[15000,ST.buf15],[30000,ST.buf30]].forEach(([ms,buf])=>{
     const bucket=Math.floor(now/ms)*ms;
-    const existing=ST.candleBuffer.get(bucket);
-    if(!existing){
-      const prev=ST.candleBuffer.get(bucket-ms);
-      const open=prev?prev.c:price;
-      ST.candleBuffer.set(bucket,{t:bucket,o:open,h:price,l:price,c:price});
-      // Prune old entries
+    const ex=buf.get(bucket);
+    if(!ex){
+      const prev=buf.get(bucket-ms);
+      buf.set(bucket,{t:bucket,o:prev?prev.c:price,h:price,l:price,c:price});
       const cutoff=bucket-ms*90;
-      ST.candleBuffer.forEach((_,k)=>{if(k<cutoff)ST.candleBuffer.delete(k);});
+      buf.forEach((_,k)=>{if(k<cutoff)buf.delete(k);});
     } else {
-      if(price>existing.h)existing.h=price;
-      if(price<existing.l)existing.l=price;
-      existing.c=price;
+      if(price>ex.h)ex.h=price;
+      if(price<ex.l)ex.l=price;
+      ex.c=price;
     }
   });
 
@@ -498,13 +496,13 @@ function updateLiveCandle(){
     resample();
     return;
   }
-  // Same bucket — just update the live candle tip (no rebuild needed)
-  if(!ST.candles.length)return;
-  const lc=ST.candles[ST.candles.length-1];
-  if(lc.live){
-    lc.c=ST.price;
-    if(ST.price>lc.h)lc.h=ST.price;
-    if(ST.price<lc.l)lc.l=ST.price;
+  // Same bucket — update live candle in buffer directly
+  const buf=ms===15000?ST.buf15:ST.buf30;
+  const liveCan=buf.get(bucket);
+  if(liveCan){
+    liveCan.c=ST.price;
+    if(ST.price>liveCan.h)liveCan.h=ST.price;
+    if(ST.price<liveCan.l)liveCan.l=ST.price;
   }
 }
 
@@ -534,19 +532,14 @@ function resample(){
     return;
   }
 
-  // ── 15s / 30s — use real-time candle buffer built from actual trades ────
-  if(ST.candleBuffer.size>0){
-    // Get all candles from buffer for this TF, sorted by time
+  // ── 15s / 30s — use dedicated per-TF buffer ────────────────────────────
+  const buf=ms===15000?ST.buf15:ST.buf30;
+  if(buf.size>=2){
     const bufCandles=[];
-    ST.candleBuffer.forEach((candle,bucket)=>{
-      // Only include buckets that align with our TF
-      if(bucket%ms===0) bufCandles.push(candle);
-    });
+    buf.forEach(candle=>bufCandles.push(candle));
     bufCandles.sort((a,b)=>a.t-b.t);
-    if(bufCandles.length>=2){
-      ST.candles=bufCandles.slice(-80);
-      return;
-    }
+    ST.candles=bufCandles.slice(-80);
+    return;
   }
   // Fallback: interpolate from 1m if no buffer data yet
   const hist=[];
