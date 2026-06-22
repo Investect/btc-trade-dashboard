@@ -291,7 +291,8 @@ canvas{display:block;width:100%;height:100%}
   <div class="leg"><div class="leg-line" style="background:var(--up)"></div>Vol bull</div>
   <div class="leg"><div class="leg-line" style="background:var(--dn)"></div>Vol bear</div>
   <div class="leg"><div style="width:12px;height:2px;background:#a78bfa;border-radius:1px;margin-right:3px"></div>Fib 0.5/0.618</div>
-  <div class="leg"><div style="width:12px;height:1.5px;background:rgba(61,214,140,0.6);border-radius:1px;margin-right:3px;border-top:1px dashed rgba(61,214,140,0.6)"></div>Projection</div>
+  <div class="leg"><div style="width:12px;height:1.5px;background:#7dcfff;border-radius:1px;margin-right:3px"></div>Proj Bull</div>
+  <div class="leg"><div style="width:12px;height:1.5px;background:#e0af68;border-radius:1px;margin-right:3px"></div>Proj Bear</div>
   <div class="leg" style="margin-left:auto"><div class="leg-dot" style="background:var(--dn)"></div>Short signal</div>
   <span style="color:var(--dim2);font-size:8px;margin-left:8px" id="last-tick"></span>
 </div>
@@ -703,93 +704,145 @@ function draw(){
   // Grid
   for(let i=0;i<=6;i++){const pv=lo+rng/6*i,y=py(pv);cx.beginPath();cx.strokeStyle='#111825';cx.lineWidth=1;cx.setLineDash([]);cx.moveTo(L,y);cx.lineTo(L+chartW,y);cx.stroke();cx.fillStyle='#3a4259';cx.font='10px "JetBrains Mono",monospace';cx.textAlign='left';cx.fillText('$'+Math.round(pv).toLocaleString('en-GB'),L+chartW+4,y+4);}
 
-  // ── AUTO FIB RETRACEMENT — finds last swing high/low, draws 0.5 & 0.618 ────
+  // ── AUTO FIB RETRACEMENT ─────────────────────────────────────────────────
   if(ST.candles.length>=8){
-    const cl=ST.candles.slice(-60); // look back up to 60 candles
-    // Find swing high and swing low using pivot detection
+    const cl=ST.candles.slice(-60);
+    // Find the MOST RECENT significant swing high and low
+    // We want the last completed swing, not the global extremes
     let swingHigh=-Infinity,swingLow=Infinity;
-    let swingHighIdx=0,swingLowIdx=0;
+    let swingHighIdx=-1,swingLowIdx=-1;
+    let swingHighCandle=null,swingLowCandle=null;
     for(let i=2;i<cl.length-2;i++){
       if(cl[i].h>cl[i-1].h&&cl[i].h>cl[i-2].h&&cl[i].h>cl[i+1].h&&cl[i].h>cl[i+2].h){
-        if(cl[i].h>swingHigh){swingHigh=cl[i].h;swingHighIdx=i;}
+        // Keep the most RECENT significant pivot (not most extreme)
+        if(swingHighIdx===-1||i>swingHighIdx){
+          swingHigh=cl[i].h;swingHighIdx=i;swingHighCandle=cl[i];
+        }
       }
       if(cl[i].l<cl[i-1].l&&cl[i].l<cl[i-2].l&&cl[i].l<cl[i+1].l&&cl[i].l<cl[i+2].l){
-        if(cl[i].l<swingLow){swingLow=cl[i].l;swingLowIdx=i;}
+        if(swingLowIdx===-1||i>swingLowIdx){
+          swingLow=cl[i].l;swingLowIdx=i;swingLowCandle=cl[i];
+        }
       }
     }
-    if(swingHigh>-Infinity&&swingLow<Infinity&&swingHigh>swingLow){
+
+    if(swingHighIdx>=0&&swingLowIdx>=0&&swingHigh>swingLow){
       const fibRange=swingHigh-swingLow;
-      // Determine direction — is most recent swing the high or low?
-      const bearish=swingHighIdx<swingLowIdx; // high came first then low = bearish retrace
-      // Fib levels (retracement of the move)
-      const fib50  = bearish ? swingLow+fibRange*0.5   : swingHigh-fibRange*0.5;
-      const fib618 = bearish ? swingLow+fibRange*0.618 : swingHigh-fibRange*0.618;
-      const fib50Y =py(fib50),  fib618Y=py(fib618);
+      const bearish=swingHighIdx<swingLowIdx;
+      const fib50  =bearish?swingLow+fibRange*0.5  :swingHigh-fibRange*0.5;
+      const fib618 =bearish?swingLow+fibRange*0.618:swingHigh-fibRange*0.618;
+      const fib50Y =py(fib50), fib618Y=py(fib618);
       const fibTop =Math.min(fib50Y,fib618Y);
       const fibH   =Math.abs(fib50Y-fib618Y);
+      const shY    =swingHigh>=lo&&swingHigh<=hi?py(swingHigh):null;
+      const slY    =swingLow>=lo&&swingLow<=hi?py(swingLow):null;
 
-      // Only draw if zone is visible
+      // X positions of swing candles on chart
+      const shX = swingHighIdx<cl.length
+        ? L+(ZOOM-cl.length+swingHighIdx)*sp2+sp2/2 : null;
+      const slX = swingLowIdx<cl.length
+        ? L+(ZOOM-cl.length+swingLowIdx)*sp2+sp2/2 : null;
+
       if(fibTop<BOT&&fibTop+fibH>TOP){
+
+        // ── SWING ANCHOR MARKERS — draw first so they're under everything ─
         cx.save();
-        // Zone fill — visible purple band
-        cx.globalAlpha=0.18;
-        cx.fillStyle='#a78bfa';
-        cx.fillRect(L,Math.max(fibTop,TOP),chartW,Math.min(fibH,chartH));
-        // Hatching pattern inside zone for extra visibility
-        cx.globalAlpha=0.08;
-        for(let hx=L;hx<L+chartW;hx+=12){
-          cx.beginPath();cx.moveTo(hx,Math.max(fibTop,TOP));
-          cx.lineTo(hx,Math.min(fibTop+fibH,BOT));cx.stroke();
+
+        // Swing High marker — triangle + price label on the candle
+        if(shY!==null&&shX!==null&&shX>=L&&shX<=L+chartW){
+          // Triangle above candle
+          cx.fillStyle='#c4b5fd';cx.globalAlpha=0.9;
+          cx.beginPath();cx.moveTo(shX,shY-14);cx.lineTo(shX-6,shY-5);cx.lineTo(shX+6,shY-5);cx.closePath();cx.fill();
+          // Label
+          const shTxt='H '+fmt(swingHigh);
+          cx.font='700 9px "JetBrains Mono",monospace';
+          const stw=cx.measureText(shTxt).width+8;
+          cx.fillStyle='rgba(7,11,17,0.92)';cx.strokeStyle='#c4b5fd';cx.lineWidth=1;cx.setLineDash([]);
+          cx.beginPath();rr(shX-stw/2,shY-28,stw,14,2);cx.fill();cx.stroke();
+          cx.fillStyle='#c4b5fd';cx.textAlign='center';cx.fillText(shTxt,shX,shY-19);
+          // Vertical dotted line down to fib zone
+          if(fib618Y>shY){
+            cx.strokeStyle='#a78bfa44';cx.lineWidth=1;cx.setLineDash([3,4]);
+            cx.beginPath();cx.moveTo(shX,shY);cx.lineTo(shX,Math.min(fib618Y,BOT));cx.stroke();
+          }
+          cx.setLineDash([]);
+        }
+
+        // Swing Low marker — triangle below candle
+        if(slY!==null&&slX!==null&&slX>=L&&slX<=L+chartW){
+          cx.fillStyle='#a78bfa';cx.globalAlpha=0.9;
+          cx.beginPath();cx.moveTo(slX,slY+14);cx.lineTo(slX-6,slY+5);cx.lineTo(slX+6,slY+5);cx.closePath();cx.fill();
+          const slTxt='L '+fmt(swingLow);
+          cx.font='700 9px "JetBrains Mono",monospace';
+          const sltw=cx.measureText(slTxt).width+8;
+          cx.fillStyle='rgba(7,11,17,0.92)';cx.strokeStyle='#a78bfa';cx.lineWidth=1;cx.setLineDash([]);
+          cx.beginPath();rr(slX-sltw/2,slY+16,sltw,14,2);cx.fill();cx.stroke();
+          cx.fillStyle='#a78bfa';cx.textAlign='center';cx.fillText(slTxt,slX,slY+26);
+          if(fib50Y<slY){
+            cx.strokeStyle='#a78bfa44';cx.lineWidth=1;cx.setLineDash([3,4]);
+            cx.beginPath();cx.moveTo(slX,slY);cx.lineTo(slX,Math.max(fib50Y,TOP));cx.stroke();
+          }
+          cx.setLineDash([]);
         }
         cx.restore();
 
-        // 0.5 line — solid, bright
+        // ── ZONE FILL ────────────────────────────────────────────────────
+        cx.save();cx.globalAlpha=0.14;cx.fillStyle='#a78bfa';
+        cx.fillRect(L,Math.max(fibTop,TOP),chartW,Math.min(fibH,chartH));
+        cx.restore();
+
+        // ── FIB LINES — right side labels only, no left overlap ──────────
+        // 0.5 line
         if(fib50Y>=TOP&&fib50Y<=BOT){
           cx.save();
-          cx.setLineDash([8,4]);cx.strokeStyle='#a78bfa';cx.lineWidth=2;cx.globalAlpha=1;
+          cx.setLineDash([8,4]);cx.strokeStyle='#a78bfa';cx.lineWidth=1.8;
           cx.beginPath();cx.moveTo(L,fib50Y);cx.lineTo(L+chartW,fib50Y);cx.stroke();
           cx.setLineDash([]);
-          // Big pill label — left side
-          const f50txt='0.5 — '+fmt(fib50);
-          cx.font='700 10px "JetBrains Mono",monospace';
-          const f50w=cx.measureText(f50txt).width+14;
-          cx.fillStyle='rgba(167,139,250,0.2)';
-          cx.strokeStyle='#a78bfa';cx.lineWidth=1.2;
-          cx.beginPath();rr(L+6,fib50Y-10,f50w,18,3);cx.fill();cx.stroke();
+          // RIGHT side label — no overlap with chart pills
+          const txt50='0.5  '+fmt(fib50);
+          cx.font='700 9px "JetBrains Mono",monospace';
+          const tw50=cx.measureText(txt50).width+10;
+          cx.fillStyle='rgba(7,11,17,0.92)';cx.strokeStyle='#a78bfa';cx.lineWidth=1;
+          cx.beginPath();rr(L+chartW+PW-tw50-2,fib50Y-8,tw50,15,2);cx.fill();cx.stroke();
           cx.fillStyle='#a78bfa';cx.textAlign='left';
-          cx.fillText(f50txt,L+10,fib50Y+4);
+          cx.fillText(txt50,L+chartW+PW-tw50+2,fib50Y+4);
           cx.restore();
         }
 
-        // 0.618 line — brightest, golden ratio
+        // 0.618 line — golden ratio, slightly brighter
         if(fib618Y>=TOP&&fib618Y<=BOT){
           cx.save();
-          cx.setLineDash([8,4]);cx.strokeStyle='#c4b5fd';cx.lineWidth=2.5;cx.globalAlpha=1;
+          cx.setLineDash([8,4]);cx.strokeStyle='#c4b5fd';cx.lineWidth=2.2;
           cx.beginPath();cx.moveTo(L,fib618Y);cx.lineTo(L+chartW,fib618Y);cx.stroke();
           cx.setLineDash([]);
-          // Big pill label — left side
-          const f618txt='0.618 — '+fmt(fib618)+' ★';
-          cx.font='700 10px "JetBrains Mono",monospace';
-          const f618w=cx.measureText(f618txt).width+14;
-          cx.fillStyle='rgba(196,181,253,0.25)';
-          cx.strokeStyle='#c4b5fd';cx.lineWidth=1.5;
-          cx.beginPath();rr(L+6,fib618Y-10,f618w,18,3);cx.fill();cx.stroke();
+          const txt618='0.618 ★  '+fmt(fib618);
+          cx.font='700 9px "JetBrains Mono",monospace';
+          const tw618=cx.measureText(txt618).width+10;
+          cx.fillStyle='rgba(7,11,17,0.92)';cx.strokeStyle='#c4b5fd';cx.lineWidth=1.2;
+          cx.beginPath();rr(L+chartW+PW-tw618-2,fib618Y-8,tw618,15,2);cx.fill();cx.stroke();
           cx.fillStyle='#c4b5fd';cx.textAlign='left';
-          cx.fillText(f618txt,L+10,fib618Y+4);
+          cx.fillText(txt618,L+chartW+PW-tw618+2,fib618Y+4);
           cx.restore();
         }
 
-        // Small label showing swing points
-        if(swingHigh>=lo&&swingHigh<=hi){
-          const shY=py(swingHigh);
-          cx.save();cx.fillStyle='#a78bfa88';cx.font='600 8px "JetBrains Mono",monospace';cx.textAlign='right';
-          cx.fillText('SWING H',L+chartW-4,shY-3);cx.restore();
-        }
-        if(swingLow>=lo&&swingLow<=hi){
-          const slY=py(swingLow);
-          cx.save();cx.fillStyle='#a78bfa88';cx.font='600 8px "JetBrains Mono",monospace';cx.textAlign='right';
-          cx.fillText('SWING L',L+chartW-4,slY+10);cx.restore();
-        }
+        // ── RANGE BRACKET — vertical line on right showing full fib range ─
+        const bracketX=L+chartW+2;
+        const shBracketY=shY!==null?Math.max(shY,TOP):Math.min(fib50Y,fib618Y)-10;
+        const slBracketY=slY!==null?Math.min(slY,BOT):Math.max(fib50Y,fib618Y)+10;
+        cx.save();
+        cx.strokeStyle='#a78bfa55';cx.lineWidth=1;cx.setLineDash([]);
+        cx.beginPath();cx.moveTo(bracketX,shBracketY);cx.lineTo(bracketX,slBracketY);cx.stroke();
+        // Top tick
+        cx.beginPath();cx.moveTo(bracketX-3,shBracketY);cx.lineTo(bracketX+3,shBracketY);cx.stroke();
+        // Bottom tick
+        cx.beginPath();cx.moveTo(bracketX-3,slBracketY);cx.lineTo(bracketX+3,slBracketY);cx.stroke();
+        // Range label
+        cx.fillStyle='#a78bfa66';cx.font='600 8px "JetBrains Mono",monospace';cx.textAlign='left';
+        cx.fillText('$'+Math.round(fibRange),(bracketX+5),(shBracketY+slBracketY)/2+3);
+        // Direction label
+        cx.fillStyle='#c4b5fd99';cx.font='600 8px "JetBrains Mono",monospace';
+        cx.fillText(bearish?'BEAR RETRACE':'BULL RETRACE',bracketX+5,(shBracketY+slBracketY)/2+14);
+        cx.restore();
       }
     }
   }
@@ -1399,63 +1452,133 @@ function drawProjection(){
   let histCandles=[];
   if(ms===60000) histCandles=ST.raw1m.slice(-HIST);
   else if(ms>60000){
-    // aggregate
     const agg=[];let cur=null;
-    ST.raw1m.forEach(c=>{
-      const bucket=Math.floor(c.t/ms)*ms;
-      if(!cur||cur.t!==bucket){if(cur)agg.push(cur);cur={t:bucket,o:c.o,h:c.h,l:c.l,c:c.c};}
-      else{cur.h=Math.max(cur.h,c.h);cur.l=Math.min(cur.l,c.l);cur.c=c.c;}
+    ST.raw1m.forEach(k=>{
+      const bucket=Math.floor(k.t/ms)*ms;
+      if(!cur||cur.t!==bucket){if(cur)agg.push(cur);cur={t:bucket,o:k.o,h:k.h,l:k.l,c:k.c};}
+      else{cur.h=Math.max(cur.h,k.h);cur.l=Math.min(cur.l,k.l);cur.c=k.c;}
     });
     if(cur)agg.push(cur);
     histCandles=agg.slice(-HIST);
   } else {
-    // sub-minute — use existing candles
     histCandles=ST.candles.slice(-HIST);
   }
   if(histCandles.length<3) return;
 
-  // ── CALCULATE PROJECTION ──────────────────────────────────────────────────
-  const rc=histCandles.slice(-6);
-  const closes=rc.map(c=>c.c);
-  const avgBody=rc.reduce((s,c)=>s+Math.abs(c.c-c.o),0)/rc.length||1;
-  // Trend: linear regression slope
-  const n=closes.length;
-  const xMean=(n-1)/2;
-  const yMean=closes.reduce((a,b)=>a+b,0)/n;
+  // ── MARKET CONTEXT ────────────────────────────────────────────────────────
+  const rc=histCandles.slice(-8);
+  const closes=rc.map(k=>k.c);
+  const avgBody=rc.reduce((s,k)=>s+Math.abs(k.c-k.o),0)/rc.length||1;
+  const avgRange=rc.reduce((s,k)=>s+(k.h-k.l),0)/rc.length||1; // true volatility
+
+  // Linear regression slope
+  const nn=closes.length, xMean=(nn-1)/2;
+  const yMean=closes.reduce((a,b)=>a+b,0)/nn;
   let num=0,den=0;
   closes.forEach((y,x)=>{num+=(x-xMean)*(y-yMean);den+=(x-xMean)**2;});
   const slope=den>0?num/den:0;
 
-  // Delta bias
+  // Delta
   let bv=0,sv=0;
   ST.trades.forEach(t=>t.isSell?sv+=t.qty:bv+=t.qty);
-  const deltaB=(bv-sv)/(bv+sv||1);
+  const deltaB=(bv-sv)/(bv+sv||1); // -1 bearish to +1 bullish
 
-  // Volatility from recent candles
-  const vol=rc.reduce((s,c)=>s+(c.h-c.l),0)/rc.length;
+  // Momentum score — combines slope + delta
+  const momScore = slope/avgRange + deltaB*0.4; // normalised
 
-  // Nearest target pull
-  const goingUp=slope+deltaB*avgBody*0.3>0;
-  const nearTarget=goingUp
-    ?ST.levels.find(l=>l.price>ST.price&&l.strength>=2)
-    :[...ST.levels].reverse().find(l=>l.price<ST.price&&l.strength>=2);
+  // Collect ALL nearby levels as barriers — these cause rejection/bounce
+  const barriers = ST.levels
+    .filter(l=>Math.abs(l.price-ST.price)<avgRange*PROJ*1.5)
+    .map(l=>({price:l.price,color:l.color,type:l.type,
+               strength:l.strength,side:l.side}));
 
-  // Build projected candles
-  const projCandles=[];
-  let lastClose=ST.price;
-  let lastHigh=ST.price, lastLow=ST.price;
-  for(let i=0;i<PROJ;i++){
-    const pull=nearTarget?(nearTarget.price-lastClose)*0.08:0;
-    const momentum=slope*0.5+deltaB*avgBody*0.3+pull;
-    const noise=(Math.random()-0.5)*vol*0.3;
-    const close=lastClose+momentum+noise;
-    const wickSize=vol*0.25;
-    const o=lastClose;
-    const h=Math.max(o,close)+Math.abs(noise)*0.5+wickSize*Math.random();
-    const l=Math.min(o,close)-Math.abs(noise)*0.5-wickSize*Math.random();
-    projCandles.push({o,h,l,c:close,proj:true});
-    lastClose=close;
+  // Recent swing highs and lows as additional barriers
+  for(let i=2;i<rc.length-2;i++){
+    if(rc[i].h>rc[i-1].h&&rc[i].h>rc[i+1].h)
+      barriers.push({price:rc[i].h,type:'swing',strength:2,side:'above'});
+    if(rc[i].l<rc[i-1].l&&rc[i].l<rc[i+1].l)
+      barriers.push({price:rc[i].l,type:'swing',strength:2,side:'below'});
   }
+
+  // ── SIMULATE REALISTIC PRICE PATH ────────────────────────────────────────
+  // Uses mean-reversion model with level-based rejection
+  // Price gets pulled toward momentum target but bounces off barriers
+  const projCandles=[];
+  let price=ST.price;
+  let velocity=slope; // initial velocity
+  let directionChanges=0;
+  const maxVelocity=avgRange*0.6; // cap speed
+
+  for(let i=0;i<PROJ;i++){
+    const o=price;
+
+    // Base momentum decays over time (trends lose steam)
+    const decay=Math.pow(0.88,i);
+    velocity=velocity*0.85 + slope*decay*0.15 + deltaB*avgBody*0.08;
+
+    // Cap velocity
+    velocity=Math.max(-maxVelocity, Math.min(maxVelocity, velocity));
+
+    // Level rejection — check for barriers nearby
+    barriers.forEach(b=>{
+      const dist=b.price-price;
+      const proximity=Math.abs(dist);
+      if(proximity<avgRange*0.8){
+        // Resistance above — push back down when approaching
+        if(dist>0&&dist<avgRange*0.5&&velocity>0){
+          const rejectStrength=b.strength===3?0.7:0.4;
+          // Strong resistance: reverse velocity
+          if(proximity<avgRange*0.25&&b.strength===3){
+            velocity*=-rejectStrength;
+            directionChanges++;
+          } else {
+            velocity-=dist*0.25*rejectStrength;
+          }
+        }
+        // Support below — push back up
+        if(dist<0&&dist>-avgRange*0.5&&velocity<0){
+          const bounceStrength=b.strength===3?0.7:0.4;
+          if(proximity<avgRange*0.25&&b.strength===3){
+            velocity*=-bounceStrength;
+            directionChanges++;
+          } else {
+            velocity-=dist*0.25*bounceStrength;
+          }
+        }
+      }
+    });
+
+    // Mean reversion — price tends to return to local mean (prevent infinite trend)
+    const localMean=closes.reduce((a,b)=>a+b,0)/closes.length;
+    const meanPull=(localMean-price)*0.04*(1-decay*0.5);
+    velocity+=meanPull;
+
+    // Noise — realistic candle variation (proportional to timeframe volatility)
+    const noiseScale=avgRange*0.2;
+    const noise=(Math.random()-0.5)*noiseScale;
+
+    const closePrice=price+velocity+noise;
+
+    // Build realistic candle with proper wick structure
+    const bodyTop=Math.max(o,closePrice);
+    const bodyBot=Math.min(o,closePrice);
+    const bodySize=Math.abs(closePrice-o)||avgBody*0.1;
+    // Upper wick — larger if approaching resistance
+    const nearResist=barriers.find(b=>b.price>bodyTop&&b.price-bodyTop<avgRange*0.4);
+    const upperWickMult=nearResist?0.6:0.3;
+    const lowerWickMult=barriers.find(b=>b.price<bodyBot&&bodyBot-b.price<avgRange*0.4)?0.6:0.3;
+    const h=bodyTop+bodySize*upperWickMult*Math.random()+avgRange*0.05;
+    const l=bodyBot-bodySize*lowerWickMult*Math.random()-avgRange*0.05;
+
+    projCandles.push({o,h,l,c:closePrice});
+    price=closePrice;
+    velocity*=0.92; // friction
+  }
+
+  const goingUp=projCandles[projCandles.length-1].c>ST.price;
+  const nearTarget=goingUp
+    ?barriers.find(b=>b.price>ST.price&&b.type!=='swing')
+    :[...barriers].reverse().find(b=>b.price<ST.price&&b.type!=='swing');
 
   // Price range for Y scale
   const allCandles=[...histCandles,...projCandles];
@@ -1488,21 +1611,24 @@ function drawProjection(){
   histCandles.forEach((can,i)=>{
     const x=PAD+i*cw+cw/2;
     const bull=can.c>=can.o;
-    const col=bull?'#3dd68c':'#f16b6b';
+    // Last 5 candles = full green/red, earlier = muted so recent stands out
+    const isRecent = i >= histCandles.length-5;
+    const col = isRecent ? (bull?'#3dd68c':'#f16b6b') : (bull?'rgba(61,214,140,0.45)':'rgba(241,107,107,0.45)');
+    const fillCol = isRecent ? (bull?'rgba(61,214,140,0.15)':'rgba(241,107,107,0.15)') : (bull?'rgba(61,214,140,0.07)':'rgba(241,107,107,0.07)');
     const oY=py2(can.o),cY=py2(can.c),hY=py2(can.h),lY=py2(can.l);
-    pxc.beginPath();pxc.strokeStyle=col;pxc.lineWidth=1;pxc.setLineDash([]);
+    pxc.beginPath();pxc.strokeStyle=col;pxc.lineWidth=isRecent?1.2:0.8;pxc.setLineDash([]);
     pxc.moveTo(x,hY);pxc.lineTo(x,lY);pxc.stroke();
     const top=Math.min(oY,cY),ht=Math.max(Math.abs(cY-oY),2);
-    pxc.fillStyle=bull?'rgba(61,214,140,0.12)':'rgba(241,107,107,0.12)';
+    pxc.fillStyle=fillCol;
     pxc.fillRect(x-bw/2,top,bw,ht);
-    pxc.strokeStyle=col;pxc.lineWidth=1;pxc.strokeRect(x-bw/2,top,bw,ht);
+    pxc.strokeStyle=col;pxc.lineWidth=isRecent?1.2:0.8;pxc.strokeRect(x-bw/2,top,bw,ht);
   });
 
   // ── DRAW PROJECTED CANDLES ────────────────────────────────────────────────
   // Confidence cone first (behind candles)
   pxc.save();
-  pxc.globalAlpha=0.06;
-  pxc.fillStyle=goingUp?'#3dd68c':'#f16b6b';
+  pxc.globalAlpha=0.07;
+  pxc.fillStyle=goingUp?'#7dcfff':'#e0af68'; // blue cone for bull, yellow for bear
   pxc.beginPath();
   const startX=divX, startY=py2(ST.price);
   pxc.moveTo(startX,startY);
@@ -1518,24 +1644,35 @@ function drawProjection(){
   pxc.closePath();pxc.fill();
   pxc.restore();
 
+  // Projected candles: bull=blue, bear=yellow — clearly different from real candles
+  const projBullCol  = '#7dcfff'; // cyan-blue for projected bull
+  const projBearCol  = '#e0af68'; // amber-yellow for projected bear
+  const projDirCol   = goingUp ? projBullCol : projBearCol; // overall direction colour
+
   projCandles.forEach((can,i)=>{
     const x=divX+(i+0.5)*cw+cw/2;
     const bull=can.c>=can.o;
-    const alpha=1-(i/PROJ)*0.5;
-    const col=goingUp?`rgba(61,214,140,${alpha})`:`rgba(241,107,107,${alpha})`;
+    const alpha=1-(i/PROJ)*0.55; // fade out toward future
+    // Individual candle colour based on direction, not overall trend
+    const col=bull
+      ?`rgba(125,207,255,${alpha})`   // blue for up candles
+      :`rgba(224,175,104,${alpha})`;  // yellow for down candles
+    const fillCol=bull
+      ?`rgba(125,207,255,${alpha*0.15})`
+      :`rgba(224,175,104,${alpha*0.15})`;
     const oY=py2(can.o),cY=py2(can.c),hY=py2(can.h),lY=py2(can.l);
-    pxc.beginPath();pxc.strokeStyle=col;pxc.lineWidth=1;pxc.setLineDash([]);
+    pxc.beginPath();pxc.strokeStyle=col;pxc.lineWidth=0.9;pxc.setLineDash([]);
     pxc.moveTo(x,hY);pxc.lineTo(x,lY);pxc.stroke();
     const top=Math.min(oY,cY),ht=Math.max(Math.abs(cY-oY),1.5);
-    pxc.fillStyle=goingUp?`rgba(61,214,140,${alpha*0.15})`:`rgba(241,107,107,${alpha*0.15})`;
+    pxc.fillStyle=fillCol;
     pxc.fillRect(x-bw/2,top,bw,ht);
-    pxc.strokeStyle=col;pxc.lineWidth=0.8;pxc.strokeRect(x-bw/2,top,bw,ht);
+    pxc.strokeStyle=col;pxc.lineWidth=0.9;pxc.strokeRect(x-bw/2,top,bw,ht);
   });
 
   // Projection path line
   pxc.save();
-  pxc.shadowColor=goingUp?'#3dd68c':'#f16b6b';pxc.shadowBlur=6;
-  pxc.strokeStyle=goingUp?'rgba(61,214,140,0.8)':'rgba(241,107,107,0.8)';
+  pxc.shadowColor=goingUp?'#7dcfff':'#e0af68';pxc.shadowBlur=6;
+  pxc.strokeStyle=goingUp?'rgba(125,207,255,0.8)':'rgba(224,175,104,0.8)';
   pxc.lineWidth=1.5;pxc.setLineDash([4,3]);
   pxc.beginPath();pxc.moveTo(divX,py2(ST.price));
   projCandles.forEach((_,i)=>pxc.lineTo(divX+(i+1)*cw,py2(projCandles[i].c)));
@@ -1565,7 +1702,7 @@ function drawProjection(){
   // Projected end price label
   const endPrice=projCandles[projCandles.length-1].c;
   const endY=py2(endPrice);
-  const endCol=goingUp?'#3dd68c':'#f16b6b';
+  const endCol=goingUp?'#7dcfff':'#e0af68'; // blue=bull projection, yellow=bear
   pxc.save();
   pxc.fillStyle=goingUp?'rgba(61,214,140,0.15)':'rgba(241,107,107,0.15)';
   pxc.strokeStyle=endCol;pxc.lineWidth=1;pxc.setLineDash([]);
@@ -1583,9 +1720,9 @@ function drawProjection(){
     const chg=endPrice-ST.price;
     const chgPct=(chg/ST.price*100).toFixed(2);
     biasTag.textContent=(goingUp?'▲ +':'▼ ')+chgPct+'%';
-    biasTag.style.background=goingUp?'rgba(61,214,140,0.15)':'rgba(241,107,107,0.15)';
-    biasTag.style.color=goingUp?'#3dd68c':'#f16b6b';
-    biasTag.style.border=`1px solid ${goingUp?'rgba(61,214,140,0.3)':'rgba(241,107,107,0.3)'}`;
+    biasTag.style.background=goingUp?'rgba(125,207,255,0.12)':'rgba(224,175,104,0.12)';
+    biasTag.style.color=goingUp?'#7dcfff':'#e0af68';
+    biasTag.style.border=`1px solid ${goingUp?'rgba(125,207,255,0.3)':'rgba(224,175,104,0.3)'}`;
   }
 
   // X axis — time labels
