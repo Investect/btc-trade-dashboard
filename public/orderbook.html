@@ -119,7 +119,7 @@ html,body{height:100%;overflow:hidden;background:#070b11;color:#c9d1e0;font-fami
 .sr{display:flex;gap:6px;align-items:baseline}
 .srl{font-size:7px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:#ffffff;min-width:58px;flex-shrink:0;opacity:0.7}
 .srv{font-size:9px;font-weight:600;color:#ffffff;line-height:1.4;flex:1}
-#spf{position:fixed;inset:0;pointer-events:none;opacity:0;z-index:199;transition:opacity .4s}
+#spf{display:none}/* flash removed - caused full page repaint jank */
 /* LEGEND */
 #legend{background:var(--s1);border-top:1px solid var(--br2);display:flex;align-items:center;gap:8px;padding:0 10px;overflow:hidden;flex-shrink:0}
 .leg{display:flex;align-items:center;gap:3px;white-space:nowrap;font-size:7.5px;font-weight:500;color:var(--dim);text-transform:uppercase;letter-spacing:.05em}
@@ -407,28 +407,8 @@ function onTrade(d){
   if(ST.tape.length>60)ST.tape=ST.tape.slice(0,60);
   ST.trades=ST.trades.filter(t=>t.t>Date.now()-30000);
   if(ST.tape.length>200)ST.tape=ST.tape.slice(0,200); // keep more for candle building
-  // For sub-minute TFs, trigger resample to advance live candle
-  const tfMs=TF[curTF].ms;
-  if(tfMs<60000){
-    const nowBucket=Math.floor(Date.now()/tfMs)*tfMs;
-    const lastCandle=ST.candles[ST.candles.length-1];
-    if(!lastCandle||lastCandle.t!==nowBucket){
-      resample(); // new candle bucket — rebuild
-    } else if(lastCandle.live){
-      // Update live candle directly
-      lastCandle.c=price;
-      if(price>lastCandle.h)lastCandle.h=price;
-      if(price<lastCandle.l)lastCandle.l=price;
-    }
-  } else {
-    // For 1m+ just update the last candle close
-    if(ST.candles.length){
-      const lc=ST.candles[ST.candles.length-1];
-      lc.c=price;
-      if(price>lc.h)lc.h=price;
-      if(price<lc.l)lc.l=price;
-    }
-  }
+  // Live candle is updated by updateLiveCandle() in tick loop
+  // Just keep price current — no resample needed here
   renderTape();updateTopBar();
 }
 
@@ -475,8 +455,30 @@ function addKlineVol(k){
 }
 
 // ── RESAMPLE 1m candles into selected TF ─────────────────────────────────────
-// Live candle state for sub-minute TFs
+// Live candle state
 const liveCandle={candle:null,ms:0};
+let _lastBucket=0;
+
+function updateLiveCandle(){
+  if(!ST.price||!ST.raw1m.length)return;
+  const ms=TF[curTF].ms;
+  if(ms>=60000)return; // 1m+ handled by onKline
+  const bucket=Math.floor(Date.now()/ms)*ms;
+  // New bucket = new candle — do full resample
+  if(bucket!==_lastBucket){
+    _lastBucket=bucket;
+    resample();
+    return;
+  }
+  // Same bucket — just update the live candle tip (no rebuild needed)
+  if(!ST.candles.length)return;
+  const lc=ST.candles[ST.candles.length-1];
+  if(lc.live){
+    lc.c=ST.price;
+    if(ST.price>lc.h)lc.h=ST.price;
+    if(ST.price<lc.l)lc.l=ST.price;
+  }
+}
 
 function resample(){
   if(!ST.raw1m.length)return;
@@ -652,7 +654,6 @@ let _sigFiredAt=0;
 
 function dismissSignal(){
   $('signal-pill').classList.remove('show');
-  const f=$('spf');if(f){f.style.opacity=0;f.style.border='none';}
   if(_sigTimer){clearInterval(_sigTimer);_sigTimer=null;}
 }
 
@@ -678,14 +679,7 @@ function fireSignal(type,why,entry,stop,target){
   $('sp-timer').style.color='#3dd68c';
   pill.classList.add('show');
 
-  // Brief flash — only set once, don't keep updating
-  const flash=$('spf');
-  if(flash){
-    flash.style.background=isShort?'rgba(241,107,107,0.05)':'rgba(61,214,140,0.05)';
-    flash.style.border='1px solid '+(isShort?'rgba(241,107,107,0.25)':'rgba(61,214,140,0.25)');
-    flash.style.opacity=1;
-    setTimeout(()=>{if(flash)flash.style.opacity=0;},2000);
-  }
+  // No full-page flash (causes repaint jank) — pill border is enough visual cue
 
   // Arrow on chart
   arrows.push({price:ST.price,type:isShort?'short':'long',t:Date.now()});
@@ -1917,8 +1911,8 @@ function renderPriority(){
 const _origTick = tick;
 // Redefine tick
 window.tick = function(){
-  // Rebuild sub-minute candles every tick so they always advance with time
-  if(TF[curTF].ms<60000) resample();
+  // Update live candle tip every tick (lightweight - just update last candle)
+  updateLiveCandle();
   computeLevels();checkWalls();checkProx();const d=updateDelta();checkSignals(d);renderLevels();renderPriority();draw();drawProjection();analyseSMC();
 }
 setInterval(window.tick, 100);
