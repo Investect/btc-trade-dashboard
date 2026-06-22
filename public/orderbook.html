@@ -705,184 +705,181 @@ function draw(){
   for(let i=0;i<=6;i++){const pv=lo+rng/6*i,y=py(pv);cx.beginPath();cx.strokeStyle='#111825';cx.lineWidth=1;cx.setLineDash([]);cx.moveTo(L,y);cx.lineTo(L+chartW,y);cx.stroke();cx.fillStyle='#3a4259';cx.font='10px "JetBrains Mono",monospace';cx.textAlign='left';cx.fillText('$'+Math.round(pv).toLocaleString('en-GB'),L+chartW+4,y+4);}
 
   // ── AUTO FIB RETRACEMENT ─────────────────────────────────────────────────
+  // Finds most recent swing high→low or low→high and draws full fib from 0.0 to 1.0
   if(ST.candles.length>=8){
     const cl=ST.candles.slice(-60);
-    // Find the MOST RECENT significant swing high and low
-    // We want the last completed swing, not the global extremes
-    let swingHigh=-Infinity,swingLow=Infinity;
-    let swingHighIdx=-1,swingLowIdx=-1;
-    let swingHighCandle=null,swingLowCandle=null;
+
+    // Collect ALL pivots with their index
+    const pivotHighs=[], pivotLows=[];
     for(let i=2;i<cl.length-2;i++){
-      if(cl[i].h>cl[i-1].h&&cl[i].h>cl[i-2].h&&cl[i].h>cl[i+1].h&&cl[i].h>cl[i+2].h){
-        // Keep the most RECENT significant pivot (not most extreme)
-        if(swingHighIdx===-1||i>swingHighIdx){
-          swingHigh=cl[i].h;swingHighIdx=i;swingHighCandle=cl[i];
-        }
-      }
-      if(cl[i].l<cl[i-1].l&&cl[i].l<cl[i-2].l&&cl[i].l<cl[i+1].l&&cl[i].l<cl[i+2].l){
-        if(swingLowIdx===-1||i>swingLowIdx){
-          swingLow=cl[i].l;swingLowIdx=i;swingLowCandle=cl[i];
-        }
-      }
+      if(cl[i].h>cl[i-1].h&&cl[i].h>cl[i-2].h&&cl[i].h>cl[i+1].h&&cl[i].h>cl[i+2].h)
+        pivotHighs.push({price:cl[i].h,idx:i});
+      if(cl[i].l<cl[i-1].l&&cl[i].l<cl[i-2].l&&cl[i].l<cl[i+1].l&&cl[i].l<cl[i+2].l)
+        pivotLows.push({price:cl[i].l,idx:i});
     }
 
-    if(swingHighIdx>=0&&swingLowIdx>=0&&swingHigh>swingLow){
-      const fibRange=swingHigh-swingLow;
-      const bearish=swingHighIdx<swingLowIdx;
-      const fib50  =bearish?swingLow+fibRange*0.5  :swingHigh-fibRange*0.5;
-      const fib618 =bearish?swingLow+fibRange*0.618:swingHigh-fibRange*0.618;
-      const fib50Y =py(fib50), fib618Y=py(fib618);
-      const fibTop =Math.min(fib50Y,fib618Y);
-      const fibH   =Math.abs(fib50Y-fib618Y);
-      const shY    =swingHigh>=lo&&swingHigh<=hi?py(swingHigh):null;
-      const slY    =swingLow>=lo&&swingLow<=hi?py(swingLow):null;
+    // Need at least one of each
+    if(pivotHighs.length>0&&pivotLows.length>0){
+      // Most recent pivot of each type
+      const lastH=pivotHighs[pivotHighs.length-1];
+      const lastL=pivotLows[pivotLows.length-1];
 
-      // X positions of swing candles on chart
-      const shX = swingHighIdx<cl.length
-        ? L+(ZOOM-cl.length+swingHighIdx)*sp2+sp2/2 : null;
-      const slX = swingLowIdx<cl.length
-        ? L+(ZOOM-cl.length+swingLowIdx)*sp2+sp2/2 : null;
+      // Determine direction: whichever pivot came LAST defines the end of the move
+      // If last pivot is a HIGH → price went UP → bearish retracement expected
+      // If last pivot is a LOW  → price went DOWN → bullish retracement expected
+      const bearish = lastH.idx > lastL.idx; // high came after low = bearish move
+      const fromPrice = bearish ? lastH.price : lastL.price; // start of move (0.0 = top for bear)
+      const toPrice   = bearish ? lastL.price : lastH.price; // end of move (1.0 = bottom for bear)
+      const fibRange  = Math.abs(fromPrice - toPrice);
 
-      if(fibTop<BOT&&fibTop+fibH>TOP){
+      if(fibRange > 5){ // only draw if meaningful range
+        // Full fib levels — 0.0, 0.236, 0.382, 0.5, 0.618, 0.786, 1.0
+        const fibLevels=[
+          {r:0,    col:'#c4b5fd', lw:1.5, label:'0.0   — Start'},
+          {r:0.236,col:'#6b7fa8', lw:1,   label:'0.236'},
+          {r:0.382,col:'#7c8db0', lw:1,   label:'0.382'},
+          {r:0.5,  col:'#a78bfa', lw:2,   label:'0.5   — Mid'},
+          {r:0.618,col:'#c4b5fd', lw:2.5, label:'0.618 ★'},
+          {r:0.786,col:'#7c8db0', lw:1,   label:'0.786'},
+          {r:1.0,  col:'#c4b5fd', lw:1.5, label:'1.0   — End'},
+        ];
 
-        // ── SWING ANCHOR MARKERS — draw first so they're under everything ─
+        // Calculate price for each fib level
+        // For bearish: 0.0=top(high), 1.0=bottom(low)
+        // For bullish: 0.0=bottom(low), 1.0=top(high)
+        fibLevels.forEach(f=>{
+          f.price = bearish
+            ? fromPrice - fibRange*f.r   // bear: count down from high
+            : fromPrice + fibRange*f.r;  // bull: count up from low
+          f.y = py(f.price);
+        });
+
+        // X positions of anchor candles
+        const startX=L+(ZOOM-cl.length+(bearish?lastH.idx:lastL.idx))*sp2+sp2/2;
+        const endX  =L+(ZOOM-cl.length+(bearish?lastL.idx:lastH.idx))*sp2+sp2/2;
+        const startY=py(fromPrice);
+        const endY  =py(toPrice);
+
+        // ── DRAW: START from 0.0 level first ─────────────────────────────
         cx.save();
 
-        // Swing High marker — triangle + price label on the candle
-        if(shY!==null&&shX!==null&&shX>=L&&shX<=L+chartW){
-          // Triangle above candle
-          cx.fillStyle='#c4b5fd';cx.globalAlpha=0.9;
-          cx.beginPath();cx.moveTo(shX,shY-14);cx.lineTo(shX-6,shY-5);cx.lineTo(shX+6,shY-5);cx.closePath();cx.fill();
-          // Label
-          const shTxt='H '+fmt(swingHigh);
-          cx.font='700 9px "JetBrains Mono",monospace';
-          const stw=cx.measureText(shTxt).width+8;
-          cx.fillStyle='rgba(7,11,17,0.92)';cx.strokeStyle='#c4b5fd';cx.lineWidth=1;cx.setLineDash([]);
-          cx.beginPath();rr(shX-stw/2,shY-28,stw,14,2);cx.fill();cx.stroke();
-          cx.fillStyle='#c4b5fd';cx.textAlign='center';cx.fillText(shTxt,shX,shY-19);
-          // Vertical dotted line down to fib zone
-          if(fib618Y>shY){
-            cx.strokeStyle='#a78bfa44';cx.lineWidth=1;cx.setLineDash([3,4]);
-            cx.beginPath();cx.moveTo(shX,shY);cx.lineTo(shX,Math.min(fib618Y,BOT));cx.stroke();
+        // 0.5–0.618 golden zone fill
+        const f5=fibLevels.find(f=>f.r===0.5);
+        const f618=fibLevels.find(f=>f.r===0.618);
+        if(f5&&f618){
+          const zTop=Math.min(f5.y,f618.y),zBot=Math.max(f5.y,f618.y);
+          if(zTop<BOT&&zBot>TOP){
+            cx.globalAlpha=0.18;cx.fillStyle='#a78bfa';
+            cx.fillRect(L,Math.max(zTop,TOP),chartW,Math.min(zBot-zTop,BOT-TOP));
           }
-          cx.setLineDash([]);
         }
 
-        // Swing Low marker — triangle below candle
-        if(slY!==null&&slX!==null&&slX>=L&&slX<=L+chartW){
-          cx.fillStyle='#a78bfa';cx.globalAlpha=0.9;
-          cx.beginPath();cx.moveTo(slX,slY+14);cx.lineTo(slX-6,slY+5);cx.lineTo(slX+6,slY+5);cx.closePath();cx.fill();
-          const slTxt='L '+fmt(swingLow);
-          cx.font='700 9px "JetBrains Mono",monospace';
-          const sltw=cx.measureText(slTxt).width+8;
-          cx.fillStyle='rgba(7,11,17,0.92)';cx.strokeStyle='#a78bfa';cx.lineWidth=1;cx.setLineDash([]);
-          cx.beginPath();rr(slX-sltw/2,slY+16,sltw,14,2);cx.fill();cx.stroke();
-          cx.fillStyle='#a78bfa';cx.textAlign='center';cx.fillText(slTxt,slX,slY+26);
-          if(fib50Y<slY){
-            cx.strokeStyle='#a78bfa44';cx.lineWidth=1;cx.setLineDash([3,4]);
-            cx.beginPath();cx.moveTo(slX,slY);cx.lineTo(slX,Math.max(fib50Y,TOP));cx.stroke();
-          }
-          cx.setLineDash([]);
-        }
-        cx.restore();
-
-        // ── ZONE FILL ────────────────────────────────────────────────────
-        cx.save();cx.globalAlpha=0.14;cx.fillStyle='#a78bfa';
-        cx.fillRect(L,Math.max(fibTop,TOP),chartW,Math.min(fibH,chartH));
-        cx.restore();
-
-        // ── FIB LINES — right side labels only, no left overlap ──────────
-        // 0.5 line
-        if(fib50Y>=TOP&&fib50Y<=BOT){
-          cx.save();
-          cx.setLineDash([8,4]);cx.strokeStyle='#a78bfa';cx.lineWidth=1.8;
-          cx.beginPath();cx.moveTo(L,fib50Y);cx.lineTo(L+chartW,fib50Y);cx.stroke();
-          cx.setLineDash([]);
-          // RIGHT side label — no overlap with chart pills
-          const txt50='0.5  '+fmt(fib50);
-          cx.font='700 9px "JetBrains Mono",monospace';
-          const tw50=cx.measureText(txt50).width+10;
-          cx.fillStyle='rgba(7,11,17,0.92)';cx.strokeStyle='#a78bfa';cx.lineWidth=1;
-          cx.beginPath();rr(L+chartW+PW-tw50-2,fib50Y-8,tw50,15,2);cx.fill();cx.stroke();
-          cx.fillStyle='#a78bfa';cx.textAlign='left';
-          cx.fillText(txt50,L+chartW+PW-tw50+2,fib50Y+4);
-          cx.restore();
-        }
-
-        // 0.618 line — golden ratio, slightly brighter
-        if(fib618Y>=TOP&&fib618Y<=BOT){
-          cx.save();
-          cx.setLineDash([8,4]);cx.strokeStyle='#c4b5fd';cx.lineWidth=2.2;
-          cx.beginPath();cx.moveTo(L,fib618Y);cx.lineTo(L+chartW,fib618Y);cx.stroke();
-          cx.setLineDash([]);
-          const txt618='0.618 ★  '+fmt(fib618);
-          cx.font='700 9px "JetBrains Mono",monospace';
-          const tw618=cx.measureText(txt618).width+10;
-          cx.fillStyle='rgba(7,11,17,0.92)';cx.strokeStyle='#c4b5fd';cx.lineWidth=1.2;
-          cx.beginPath();rr(L+chartW+PW-tw618-2,fib618Y-8,tw618,15,2);cx.fill();cx.stroke();
-          cx.fillStyle='#c4b5fd';cx.textAlign='left';
-          cx.fillText(txt618,L+chartW+PW-tw618+2,fib618Y+4);
-          cx.restore();
-        }
-
-        // ── LEFT SIDE BRACKET — thick purple bar showing full fib range ────
-        // This makes it instantly clear which high→low the fib is drawn from
-        cx.save();
-
-        // Clamp swing points to visible area
-        const brTop = shY!==null ? Math.max(shY,TOP) : Math.max(fib618Y,fib50Y)-20;
-        const brBot = slY!==null ? Math.min(slY,BOT) : Math.min(fib618Y,fib50Y)+20;
-        const brX   = VP+2; // right against volume profile
-
-        // Main vertical bar — thick purple
-        cx.strokeStyle='#a78bfa';cx.lineWidth=3;cx.setLineDash([]);cx.globalAlpha=0.7;
-        cx.beginPath();cx.moveTo(brX,brTop);cx.lineTo(brX,brBot);cx.stroke();
-
-        // Top cap — swing high end
-        cx.lineWidth=6;cx.strokeStyle='#c4b5fd';cx.globalAlpha=0.9;
-        cx.beginPath();cx.moveTo(brX-4,brTop);cx.lineTo(brX+4,brTop);cx.stroke();
-
-        // Bottom cap — swing low end
-        cx.strokeStyle='#a78bfa';
-        cx.beginPath();cx.moveTo(brX-4,brBot);cx.lineTo(brX+4,brBot);cx.stroke();
-
-        // Direction arrow in middle of bracket
-        const midBr=(brTop+brBot)/2;
-        cx.fillStyle=bearish?'#f16b6b':'#3dd68c';cx.globalAlpha=0.9;
-        cx.font='700 11px "JetBrains Mono",monospace';cx.textAlign='center';
-        cx.fillText(bearish?'▼':'▲',brX,midBr+4);
-
-        // Labels
+        // Draw each fib line (only if in view)
         cx.globalAlpha=1;
-        // Top label — HIGH price
-        if(shY!==null&&shY>=TOP&&shY<=BOT){
-          cx.fillStyle='rgba(7,11,17,0.9)';cx.strokeStyle='#c4b5fd';cx.lineWidth=1;cx.setLineDash([]);
-          const htxt='H '+fmt(swingHigh);
+        fibLevels.forEach(f=>{
+          if(f.y<TOP-2||f.y>BOT+2) return;
+          // Line
+          cx.save();
+          cx.strokeStyle=f.col;cx.lineWidth=f.lw;
+          cx.setLineDash(f.r===0||f.r===1?[]:[f.lw>1.5?8:6,4]);
+          cx.globalAlpha=f.r===0.5||f.r===0.618?0.95:f.r===0||f.r===1?0.8:0.5;
+          cx.beginPath();cx.moveTo(L,f.y);cx.lineTo(L+chartW,f.y);cx.stroke();
+          cx.restore();
+
+          // RIGHT side label — clean, no overlap
+          cx.save();
+          cx.setLineDash([]);
+          const ltxt=f.label+'  '+fmt(f.price);
+          cx.font=(f.lw>1.5?'700':'500')+' 9px "JetBrains Mono",monospace';
+          const ltw=cx.measureText(ltxt).width+10;
+          cx.globalAlpha=f.r===0.5||f.r===0.618||f.r===0||f.r===1?1:0.65;
+          cx.fillStyle='rgba(7,11,17,0.93)';
+          cx.strokeStyle=f.col;cx.lineWidth=f.r===0.5||f.r===0.618?1.2:0.6;
+          cx.beginPath();rr(L+chartW-ltw-2,f.y-8,ltw,15,2);cx.fill();cx.stroke();
+          cx.fillStyle=f.col;cx.textAlign='left';
+          cx.fillText(ltxt,L+chartW-ltw+3,f.y+4);
+          cx.restore();
+        });
+
+        // ── ANCHOR MARKERS ON CANDLES ─────────────────────────────────────
+        cx.save();
+        // Start anchor (0.0) — filled circle + line
+        if(startX>=L&&startX<=L+chartW){
+          // Big circle at anchor
+          cx.fillStyle='#c4b5fd';cx.globalAlpha=1;
+          cx.beginPath();cx.arc(startX,startY,5,0,Math.PI*2);cx.fill();
+          // Label above/below depending on direction
+          const stxt=(bearish?'HIGH':'LOW')+' — 0.0  '+fmt(fromPrice);
           cx.font='700 9px "JetBrains Mono",monospace';
-          const htw=cx.measureText(htxt).width+8;
-          cx.beginPath();rr(brX+6,brTop-8,htw,14,2);cx.fill();cx.stroke();
-          cx.fillStyle='#c4b5fd';cx.textAlign='left';cx.fillText(htxt,brX+10,brTop+3);
+          const stw=cx.measureText(stxt).width+10;
+          cx.fillStyle='rgba(7,11,17,0.95)';cx.strokeStyle='#c4b5fd';cx.lineWidth=1.2;cx.setLineDash([]);
+          const sy=bearish?startY-22:startY+10;
+          cx.beginPath();rr(startX-stw/2,sy,stw,16,3);cx.fill();cx.stroke();
+          cx.fillStyle='#c4b5fd';cx.textAlign='center';cx.fillText(stxt,startX,sy+11);
+          // Arrow pointing to candle
+          cx.fillStyle='#c4b5fd';cx.globalAlpha=0.8;
+          if(bearish){
+            cx.beginPath();cx.moveTo(startX,startY-6);cx.lineTo(startX-4,startY-14);cx.lineTo(startX+4,startY-14);cx.closePath();cx.fill();
+          } else {
+            cx.beginPath();cx.moveTo(startX,startY+6);cx.lineTo(startX-4,startY+14);cx.lineTo(startX+4,startY+14);cx.closePath();cx.fill();
+          }
         }
-        // Bottom label — LOW price
-        if(slY!==null&&slY>=TOP&&slY<=BOT){
-          cx.fillStyle='rgba(7,11,17,0.9)';cx.strokeStyle='#a78bfa';cx.lineWidth=1;
-          const ltxt='L '+fmt(swingLow);
+
+        // End anchor (1.0) — smaller circle
+        if(endX>=L&&endX<=L+chartW){
+          cx.fillStyle='#a78bfa';cx.globalAlpha=0.9;
+          cx.beginPath();cx.arc(endX,endY,4,0,Math.PI*2);cx.fill();
+          const etxt=(bearish?'LOW':'HIGH')+' — 1.0  '+fmt(toPrice);
           cx.font='700 9px "JetBrains Mono",monospace';
-          const ltw=cx.measureText(ltxt).width+8;
-          cx.beginPath();rr(brX+6,brBot-6,ltw,14,2);cx.fill();cx.stroke();
-          cx.fillStyle='#a78bfa';cx.textAlign='left';cx.fillText(ltxt,brX+10,brBot+5);
+          const etw=cx.measureText(etxt).width+10;
+          cx.fillStyle='rgba(7,11,17,0.95)';cx.strokeStyle='#a78bfa';cx.lineWidth=1;cx.setLineDash([]);
+          const ey=bearish?endY+10:endY-22;
+          cx.beginPath();rr(endX-etw/2,ey,etw,16,3);cx.fill();cx.stroke();
+          cx.fillStyle='#a78bfa';cx.textAlign='center';cx.fillText(etxt,endX,ey+11);
         }
-        // Range size
-        cx.fillStyle='#a78bfa88';cx.font='600 8px "JetBrains Mono",monospace';cx.textAlign='left';
-        cx.fillText('$'+Math.round(fibRange),brX+6,midBr+14);
-        // Direction tag
-        cx.fillStyle=bearish?'rgba(241,107,107,0.8)':'rgba(61,214,140,0.8)';
-        cx.fillText(bearish?'BEAR':'BULL',brX+6,midBr+24);
+
+        // Diagonal line connecting start to end anchor
+        if(startX>=L&&startX<=L+chartW&&endX>=L&&endX<=L+chartW){
+          cx.strokeStyle='#a78bfa';cx.lineWidth=1;cx.globalAlpha=0.3;cx.setLineDash([4,4]);
+          cx.beginPath();cx.moveTo(startX,startY);cx.lineTo(endX,endY);cx.stroke();
+        }
+
+        // LEFT bracket bar — full range from 0.0 to 1.0
+        const brkX=VP+3;
+        const brkTop=Math.min(startY,endY);
+        const brkBot=Math.max(startY,endY);
+        const brkTopC=Math.max(brkTop,TOP);
+        const brkBotC=Math.min(brkBot,BOT);
+        cx.globalAlpha=1;cx.setLineDash([]);
+        // Bar
+        cx.strokeStyle='#a78bfa';cx.lineWidth=2.5;
+        cx.beginPath();cx.moveTo(brkX,brkTopC);cx.lineTo(brkX,brkBotC);cx.stroke();
+        // 0.0 cap (start of move) — bright
+        cx.strokeStyle='#c4b5fd';cx.lineWidth=4;
+        cx.beginPath();cx.moveTo(brkX-4,Math.max(startY,TOP));cx.lineTo(brkX+4,Math.max(startY,TOP));cx.stroke();
+        // 1.0 cap (end of move)
+        cx.strokeStyle='#a78bfa';cx.lineWidth=4;
+        cx.beginPath();cx.moveTo(brkX-4,Math.min(endY,BOT));cx.lineTo(brkX+4,Math.min(endY,BOT));cx.stroke();
+        // Tick marks at 0.5 and 0.618 on bracket
+        [0.5,0.618].forEach(r=>{
+          const fp=fibLevels.find(f=>f.r===r);
+          if(fp&&fp.y>=TOP&&fp.y<=BOT){
+            cx.strokeStyle='#c4b5fd';cx.lineWidth=r===0.618?2:1.5;
+            cx.beginPath();cx.moveTo(brkX-3,fp.y);cx.lineTo(brkX+3,fp.y);cx.stroke();
+          }
+        });
+        // Direction + range label
+        const midBrk=(brkTopC+brkBotC)/2;
+        cx.fillStyle=bearish?'#f16b6b':'#3dd68c';cx.globalAlpha=0.9;
+        cx.font='700 10px "JetBrains Mono",monospace';cx.textAlign='center';
+        cx.fillText(bearish?'▼':'▲',brkX,midBrk+4);
+        cx.fillStyle='#a78bfa99';cx.font='600 8px "JetBrains Mono",monospace';
+        cx.fillText('$'+Math.round(fibRange),brkX,midBrk+16);
+
         cx.restore();
       }
     }
   }
-
   // Sweep zones
   const vpVis=[];ST.volProfile.forEach((v,lvl)=>{if(lvl>=lo&&lvl<=hi)vpVis.push({lvl,total:v.bull+v.bear});});
   vpVis.sort((a,b)=>b.total-a.total);
