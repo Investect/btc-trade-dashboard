@@ -306,6 +306,8 @@ const ST={
   pbids:new Map(),pasks:new Map(),
   trades:[],tape:[],
   raw1m:[],candles:[],
+  // Real-time candle buffer: Map<bucketTimestamp, {t,o,h,l,c}>
+  candleBuffer:new Map(),
   volProfile:new Map(),
   levels:[],tps:0,
 };
@@ -337,6 +339,16 @@ async function fetchHistoricCandles(){
       }
       // Seed volume profile from history
       ST.raw1m.forEach(k=>addKlineVol(k));
+      // Pre-seed candle buffer from 1m history for instant 15s/30s display
+      ST.raw1m.slice(-40).forEach(k=>{
+        [15000,30000].forEach(ms=>{
+          const n=Math.round(60000/ms),step=(k.c-k.o)/n,rng=k.h-k.l;
+          for(let i=0;i<n;i++){
+            const t=k.t+ms*i,o=k.o+step*i,cl=k.o+step*(i+1);
+            ST.candleBuffer.set(t,{t,o,c:cl,h:Math.min(Math.max(o,cl)+rng*0.25,k.h),l:Math.max(Math.min(o,cl)-rng*0.25,k.l)});
+          }
+        });
+      });
       resample();
       console.log('[history] loaded',ST.raw1m.length,'candles from',url);
       return;
@@ -401,17 +413,33 @@ function onTrade(d){
   const price=+d.p,qty=+d.q,isSell=d.m;
   ST.prev=ST.price||price;
   ST.price=price;
-  const tr={price,qty,isSell,t:Date.now()};
+  const now=Date.now();
+  const tr={price,qty,isSell,t:now};
   ST.tape.unshift(tr);ST.trades.push(tr);ST.tps++;
   addVol(price,qty,isSell);
-  if(ST.tape.length>60)ST.tape=ST.tape.slice(0,60);
-  ST.trades=ST.trades.filter(t=>t.t>Date.now()-30000);
-  if(ST.tape.length>200)ST.tape=ST.tape.slice(0,200); // keep more for candle building
-  // Live candle is updated by updateLiveCandle() in tick loop
-  // Just keep price current — no resample needed here
+  if(ST.tape.length>120)ST.tape=ST.tape.slice(0,120);
+  ST.trades=ST.trades.filter(t=>t.t>now-30000);
+
+  // ── Update real-time candle buffer for 15s and 30s TFs ───────────────────
+  [15000,30000].forEach(ms=>{
+    const bucket=Math.floor(now/ms)*ms;
+    const existing=ST.candleBuffer.get(bucket);
+    if(!existing){
+      const prev=ST.candleBuffer.get(bucket-ms);
+      const open=prev?prev.c:price;
+      ST.candleBuffer.set(bucket,{t:bucket,o:open,h:price,l:price,c:price});
+      // Prune old entries
+      const cutoff=bucket-ms*90;
+      ST.candleBuffer.forEach((_,k)=>{if(k<cutoff)ST.candleBuffer.delete(k);});
+    } else {
+      if(price>existing.h)existing.h=price;
+      if(price<existing.l)existing.l=price;
+      existing.c=price;
+    }
+  });
+
   renderTape();updateTopBar();
 }
-
 function onKline(d){
   const k=d.k;
   const c={t:+k.t,o:+k.o,h:+k.h,l:+k.l,c:+k.c};
@@ -506,48 +534,34 @@ function resample(){
     return;
   }
 
-  // ── 15s / 30s — build real-time candles from trades ─────────────────────
-  // Use closed 1m candles split into sub-candles for history
-  // Use live trade data for the CURRENT candle
-  const now=Date.now();
-  const currentBucket=Math.floor(now/ms)*ms;
-
-  // Build historical sub-candles from closed 1m data
+  // ── 15s / 30s — use real-time candle buffer built from actual trades ────
+  if(ST.candleBuffer.size>0){
+    // Get all candles from buffer for this TF, sorted by time
+    const bufCandles=[];
+    ST.candleBuffer.forEach((candle,bucket)=>{
+      // Only include buckets that align with our TF
+      if(bucket%ms===0) bufCandles.push(candle);
+    });
+    bufCandles.sort((a,b)=>a.t-b.t);
+    if(bufCandles.length>=2){
+      ST.candles=bufCandles.slice(-80);
+      return;
+    }
+  }
+  // Fallback: interpolate from 1m if no buffer data yet
   const hist=[];
+  const currentBucket=Math.floor(Date.now()/ms)*ms;
   ST.raw1m.slice(-40).forEach(k=>{
-    const n=Math.round(60000/ms);
-    const step=(k.c-k.o)/n;
-    const rng=k.h-k.l;
+    const n=Math.round(60000/ms),step=(k.c-k.o)/n,rng=k.h-k.l;
     for(let i=0;i<n;i++){
       const t=k.t+ms*i;
-      if(t>=currentBucket)continue; // skip current live bucket
-      const o=k.o+step*i;
-      const cl=k.o+step*(i+1);
-      hist.push({
-        t,o,c:cl,
-        h:Math.min(Math.max(o,cl)+rng*0.25,k.h),
-        l:Math.max(Math.min(o,cl)-rng*0.25,k.l)
-      });
+      if(t>=currentBucket)continue;
+      const o=k.o+step*i,cl=k.o+step*(i+1);
+      hist.push({t,o,c:cl,h:Math.min(Math.max(o,cl)+rng*0.25,k.h),l:Math.max(Math.min(o,cl)-rng*0.25,k.l)});
     }
   });
-
-  // Build live current candle from actual trade data
-  if(ST.price){
-    const tradesInBucket=ST.tape.filter(t=>t.t>=currentBucket);
-    let liveO,liveH,liveL,liveC=ST.price;
-    if(tradesInBucket.length>0){
-      const prices=tradesInBucket.map(t=>t.price);
-      liveO=prices[prices.length-1]; // oldest trade = open
-      liveH=Math.max(...prices,ST.price);
-      liveL=Math.min(...prices,ST.price);
-    } else {
-      // No trades yet in this bucket — use previous close as open
-      const prevClose=hist.length?hist[hist.length-1].c:ST.price;
-      liveO=prevClose;liveH=Math.max(prevClose,ST.price);liveL=Math.min(prevClose,ST.price);
-    }
-    hist.push({t:currentBucket,o:liveO,h:liveH,l:liveL,c:liveC,live:true});
-  }
-
+  const prevClose=hist.length?hist[hist.length-1].c:ST.price;
+  if(ST.price) hist.push({t:currentBucket,o:prevClose,h:Math.max(prevClose,ST.price),l:Math.min(prevClose,ST.price),c:ST.price,live:true});
   ST.candles=hist.slice(-80);
 }
 
