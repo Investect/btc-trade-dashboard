@@ -106,17 +106,19 @@ html,body{height:100%;overflow:hidden;background:#070b11;color:#c9d1e0;font-fami
 #smc-read{flex:1;display:flex;align-items:center;padding:0 10px;gap:6px;overflow:hidden;min-width:0}
 #smc-read-lbl{font-size:7px;font-weight:600;text-transform:uppercase;letter-spacing:.07em;color:var(--dim2);flex-shrink:0}
 #smc-summary{font-size:9px;color:var(--dim);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-/* SIGNAL PILL */
-#signal-pill{position:fixed;bottom:42px;left:50%;transform:translateX(-50%);display:none;flex-direction:column;z-index:200;min-width:340px;max-width:500px;background:var(--s1);border-radius:4px;overflow:hidden;box-shadow:0 8px 40px rgba(0,0,0,0.7)}
+/* SIGNAL PILL — top left */
+#signal-pill{position:fixed;top:50px;left:12px;display:none;flex-direction:column;z-index:200;width:300px;background:var(--s1);border-radius:4px;overflow:hidden;box-shadow:0 8px 40px rgba(0,0,0,0.8)}
 #signal-pill.show{display:flex}
-#sph{display:flex;align-items:center;justify-content:space-between;padding:8px 12px;border-bottom:1px solid var(--br)}
-#spt{font-size:13px;font-weight:700;letter-spacing:.05em}
-#spc{font-size:9px;color:var(--dim);cursor:pointer;padding:2px 8px;border-radius:2px;border:1px solid var(--br);background:transparent}
+#sph{display:flex;align-items:center;justify-content:space-between;padding:7px 10px;border-bottom:1px solid var(--br)}
+#spt{font-size:12px;font-weight:700;letter-spacing:.05em}
+#sph-right{display:flex;align-items:center;gap:6px}
+#sp-timer{font-size:9px;font-weight:600;font-family:"JetBrains Mono",monospace;padding:1px 6px;border-radius:2px;background:var(--s2);color:var(--dim)}
+#spc{font-size:9px;color:var(--dim);cursor:pointer;padding:1px 6px;border-radius:2px;border:1px solid var(--br);background:transparent}
 #spc:hover{color:var(--text)}
-#spb{padding:6px 12px 10px;display:grid;grid-template-columns:1fr 1fr;gap:4px 12px}
-.sr{display:flex;flex-direction:column;gap:1px}
-.srl{font-size:7px;font-weight:600;text-transform:uppercase;letter-spacing:.08em;color:var(--dim2)}
-.srv{font-size:10px;font-weight:500;color:var(--text);line-height:1.4}
+#spb{padding:5px 10px 8px;display:flex;flex-direction:column;gap:4px}
+.sr{display:flex;gap:6px;align-items:baseline}
+.srl{font-size:7px;font-weight:600;text-transform:uppercase;letter-spacing:.08em;color:var(--dim2);min-width:58px;flex-shrink:0}
+.srv{font-size:9px;font-weight:500;color:var(--text);line-height:1.4;flex:1}
 #spf{position:fixed;inset:0;pointer-events:none;opacity:0;z-index:199;transition:opacity .4s}
 /* LEGEND */
 #legend{background:var(--s1);border-top:1px solid var(--br2);display:flex;align-items:center;gap:8px;padding:0 10px;overflow:hidden;flex-shrink:0}
@@ -201,7 +203,7 @@ html,body{height:100%;overflow:hidden;background:#070b11;color:#c9d1e0;font-fami
           <span id="proj-bias-tag" style="font-size:8px;padding:1px 5px;border-radius:2px;font-weight:700">—</span>
         </div>
       </div>
-      <div id="proj-canvas-wrap"><canvas id="proj-c"></canvas></div>
+      <div id="proj-canvas-wrap" style="min-height:160px"><canvas id="proj-c"></canvas></div>
     </div>
   </div>
   <!-- COL 4: TAPE + ALERTS -->
@@ -253,13 +255,16 @@ html,body{height:100%;overflow:hidden;background:#070b11;color:#c9d1e0;font-fami
 <div id="signal-pill">
   <div id="sph">
     <span id="spt">—</span>
-    <button id="spc" onclick="dismissSignal()">✕</button>
+    <div id="sph-right">
+      <span id="sp-timer">0s ago</span>
+      <button id="spc" onclick="dismissSignal()">✕</button>
+    </div>
   </div>
   <div id="spb">
     <div class="sr"><span class="srl">Why</span><span class="srv" id="sig-why">—</span></div>
     <div class="sr"><span class="srl">Entry</span><span class="srv" id="sig-entry">—</span></div>
-    <div class="sr"><span class="srl">Stop loss</span><span class="srv" id="sig-stop">—</span></div>
-    <div class="sr"><span class="srl">Take profit</span><span class="srv" id="sig-target">—</span></div>
+    <div class="sr"><span class="srl">Stop</span><span class="srv" id="sig-stop">—</span></div>
+    <div class="sr"><span class="srl">Target</span><span class="srv" id="sig-target">—</span></div>
   </div>
 </div>
 <div id="spf"></div>
@@ -401,8 +406,13 @@ function onTrade(d){
   addVol(price,qty,isSell);
   if(ST.tape.length>60)ST.tape=ST.tape.slice(0,60);
   ST.trades=ST.trades.filter(t=>t.t>Date.now()-30000);
-  // Update last candle close price
-  if(ST.candles.length)ST.candles[ST.candles.length-1].c=price;
+  // Update last candle close price + high/low
+  if(ST.candles.length){
+    const lc=ST.candles[ST.candles.length-1];
+    lc.c=price;
+    if(price>lc.h)lc.h=price;
+    if(price<lc.l)lc.l=price;
+  }
   renderTape();updateTopBar();
 }
 
@@ -597,9 +607,16 @@ function fireSignal(type,why,entry,stop,target,flashCol){
   $('sig-entry').textContent=entry;
   $('sig-stop').textContent=stop;
   $('sig-target').textContent=target;
-  // Auto-dismiss after 20s
+  // Live age timer + auto-dismiss after 20s
+  const sigFiredAt=Date.now();
   const timer=setInterval(()=>{
-    if(Date.now()-sigCD.last>=20000){clearInterval(timer);dismissSignal();}
+    const age=Math.floor((Date.now()-sigFiredAt)/1000);
+    const te=$('sp-timer');
+    if(te){
+      te.textContent=age<60?age+'s ago':Math.floor(age/60)+'m '+( age%60)+'s ago';
+      te.style.color=age<10?'var(--up)':age<20?'var(--warn)':'var(--dn)';
+    }
+    if(age>=30){clearInterval(timer);dismissSignal();}
   },1000);
   pill.classList.add('show');
   // Flash screen
@@ -1593,7 +1610,7 @@ function drawProjection(){
         if(d<0&&vel<0&&prox<avgRange*0.3) vel*=b.strength===3?-0.6:-0.3;
       }
     });
-    const noise=(Math.random()-0.5)*avgRange*0.15;
+    const noise=(Math.random()-0.48)*avgRange*0.2; // slight bias toward momentum
     const cl=price+vel+noise;
     const bsz=Math.abs(cl-o)||avgRange*0.05;
     proj.push({o,c:cl,h:Math.max(o,cl)+bsz*0.3*Math.random(),l:Math.min(o,cl)-bsz*0.3*Math.random()});
@@ -1615,7 +1632,7 @@ function drawProjection(){
     const pv=lo2+rng2/3*i,y=py2(pv);
     pxc.strokeStyle='#111825';pxc.lineWidth=1;pxc.setLineDash([]);
     pxc.beginPath();pxc.moveTo(PAD,y);pxc.lineTo(W-PAD,y);pxc.stroke();
-    pxc.fillStyle='#2d3748';pxc.font='8px "JetBrains Mono",monospace';pxc.textAlign='right';
+    pxc.fillStyle='#2d3748';pxc.font='9px "JetBrains Mono",monospace';pxc.textAlign='right';
     pxc.fillText(fmt(pv),W-1,y-2);
   }
 
@@ -1625,11 +1642,11 @@ function drawProjection(){
   pxc.fillRect(divX,TOP,W-PAD-divX,chartH);
   pxc.strokeStyle='#2a3a50';pxc.lineWidth=1.5;pxc.setLineDash([]);
   pxc.beginPath();pxc.moveTo(divX,TOP);pxc.lineTo(divX,BOT);pxc.stroke();
-  pxc.fillStyle='#3a4a60';pxc.font='700 7px "JetBrains Mono",monospace';pxc.textAlign='center';
+  pxc.fillStyle='#3a4a60';pxc.font='700 8px "JetBrains Mono",monospace';pxc.textAlign='center';
   pxc.fillText('NOW',divX,TOP+8);
 
   // Historical candles
-  const bw=Math.max(2,cw*0.65);
+  const bw=Math.max(4,cw*0.75);
   hist.forEach((k,i)=>{
     const x=PAD+i*cw+cw/2;
     const bull=k.c>=k.o;
@@ -1680,7 +1697,7 @@ function drawProjection(){
   const endY2=py2(endP);
   const ecol=goingUp?'#7dcfff':'#e0af68';
   const etxt=(goingUp?'▲ ':'▼ ')+fmt(endP);
-  pxc.font='700 9px "JetBrains Mono",monospace';
+  pxc.font='700 10px "JetBrains Mono",monospace';
   const etw=pxc.measureText(etxt).width+8;
   pxc.fillStyle=goingUp?'rgba(125,207,255,0.15)':'rgba(224,175,104,0.15)';
   pxc.strokeStyle=ecol;pxc.lineWidth=1;pxc.setLineDash([]);
