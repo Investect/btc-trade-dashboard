@@ -3,604 +3,698 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Santosh — Live BTC Analyst</title>
+<title>Santosh — Live BTC Intelligence</title>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
-  * { margin: 0; padding: 0; box-sizing: border-box; }
+*{margin:0;padding:0;box-sizing:border-box}
 
-  :root {
-    --bg: #0a0a0f;
-    --panel: #0f0f1a;
-    --border: #1e1e2e;
-    --accent: #00d4ff;
-    --green: #00ff88;
-    --red: #ff3860;
-    --yellow: #ffd700;
-    --text: #e0e0e0;
-    --muted: #555570;
-    --header: #12121f;
-  }
+:root{
+  --bg:#070a0f;
+  --surface:#0c1018;
+  --surface2:#111620;
+  --border:#1c2535;
+  --border2:#243040;
+  --amber:#f59e0b;
+  --amber-dim:#92610a;
+  --cyan:#06b6d4;
+  --cyan-dim:#0e5a6e;
+  --green:#10b981;
+  --green-dim:#064e35;
+  --red:#ef4444;
+  --red-dim:#5a1010;
+  --purple:#8b5cf6;
+  --purple-dim:#3b2066;
+  --white:#f1f5f9;
+  --muted:#4a5568;
+  --muted2:#2d3748;
+  --mono:'IBM Plex Mono',monospace;
+  --sans:'Inter',sans-serif;
+}
 
-  body {
-    background: var(--bg);
-    color: var(--text);
-    font-family: 'Courier New', monospace;
-    height: 100vh;
-    display: flex;
-    flex-direction: column;
-    overflow: hidden;
-  }
+body{background:var(--bg);color:var(--white);font-family:var(--sans);height:100vh;display:flex;flex-direction:column;overflow:hidden}
 
-  /* HEADER */
-  #header {
-    background: var(--header);
-    border-bottom: 1px solid var(--border);
-    padding: 10px 20px;
-    display: flex;
-    align-items: center;
-    gap: 24px;
-    flex-shrink: 0;
-  }
+/* TOP BAR */
+#topbar{
+  background:var(--surface);
+  border-bottom:1px solid var(--border);
+  padding:0 20px;
+  height:52px;
+  display:flex;
+  align-items:center;
+  gap:0;
+  flex-shrink:0;
+  position:relative;
+}
 
-  #santosh-name {
-    font-size: 16px;
-    font-weight: bold;
-    color: var(--accent);
-    letter-spacing: 2px;
-  }
+#brand{
+  font-family:var(--mono);
+  font-size:15px;
+  font-weight:600;
+  color:var(--amber);
+  letter-spacing:3px;
+  margin-right:32px;
+  display:flex;
+  align-items:center;
+  gap:8px;
+}
 
-  .header-stat {
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
-  }
+.bolt{color:var(--amber);font-size:18px}
 
-  .header-stat .label {
-    font-size: 9px;
-    color: var(--muted);
-    text-transform: uppercase;
-    letter-spacing: 1px;
-  }
+.ticker-item{
+  display:flex;
+  flex-direction:column;
+  padding:0 20px;
+  border-right:1px solid var(--border);
+  height:52px;
+  justify-content:center;
+}
+.ticker-item:first-of-type{border-left:1px solid var(--border)}
 
-  .header-stat .value {
-    font-size: 14px;
-    font-weight: bold;
-  }
+.ticker-label{font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:1.5px;font-family:var(--mono)}
+.ticker-value{font-size:14px;font-weight:600;font-family:var(--mono);margin-top:1px}
 
-  #price-val { color: var(--yellow); }
-  #bias-val { color: var(--green); }
-  #score-val { color: var(--accent); }
+#price-val{color:var(--amber)}
+#bias-val{color:var(--green)}
+#score-val{color:var(--cyan)}
+#session-val{color:var(--white);font-size:11px}
 
-  .status-dot {
-    width: 8px;
-    height: 8px;
-    border-radius: 50%;
-    background: var(--green);
-    animation: pulse 2s infinite;
-    margin-left: auto;
-  }
+.live-dot{
+  width:7px;height:7px;border-radius:50%;background:var(--green);
+  box-shadow:0 0 8px var(--green);
+  animation:livepulse 2s infinite;
+  margin-left:auto;
+}
+@keyframes livepulse{0%,100%{opacity:1;box-shadow:0 0 8px var(--green)}50%{opacity:.4;box-shadow:none}}
 
-  .status-dot.offline { background: var(--red); animation: none; }
+/* MAIN */
+#main{display:flex;flex:1;overflow:hidden}
 
-  @keyframes pulse {
-    0%, 100% { opacity: 1; }
-    50% { opacity: 0.3; }
-  }
+/* FEED */
+#feed-col{
+  flex:1;
+  display:flex;
+  flex-direction:column;
+  border-right:1px solid var(--border);
+  overflow:hidden;
+}
 
-  /* MAIN LAYOUT */
-  #main {
-    display: flex;
-    flex: 1;
-    overflow: hidden;
-    gap: 0;
-  }
+#feed-header{
+  padding:10px 16px;
+  border-bottom:1px solid var(--border);
+  background:var(--surface);
+  display:flex;
+  align-items:center;
+  gap:10px;
+  flex-shrink:0;
+}
 
-  /* LEFT — AUTO FEED */
-  #feed-panel {
-    width: 55%;
-    display: flex;
-    flex-direction: column;
-    border-right: 1px solid var(--border);
-  }
+.feed-title{font-size:10px;font-family:var(--mono);color:var(--muted);text-transform:uppercase;letter-spacing:2px}
+.feed-count{font-size:10px;font-family:var(--mono);color:var(--muted2);margin-left:auto}
 
-  #feed-title {
-    padding: 10px 16px;
-    font-size: 10px;
-    color: var(--muted);
-    text-transform: uppercase;
-    letter-spacing: 2px;
-    border-bottom: 1px solid var(--border);
-    background: var(--panel);
-    flex-shrink: 0;
-  }
+#feed{
+  flex:1;
+  overflow-y:auto;
+  padding:12px;
+  display:flex;
+  flex-direction:column;
+  gap:8px;
+}
+#feed::-webkit-scrollbar{width:3px}
+#feed::-webkit-scrollbar-thumb{background:var(--border2)}
 
-  #feed {
-    flex: 1;
-    overflow-y: auto;
-    padding: 12px;
-    display: flex;
-    flex-direction: column;
-    gap: 10px;
-  }
+/* FEED CARDS */
+.card{
+  border-radius:6px;
+  border:1px solid var(--border);
+  background:var(--surface);
+  animation:cardin .25s ease;
+  overflow:hidden;
+  cursor:default;
+  transition:border-color .15s;
+}
+.card:hover{border-color:var(--border2)}
+@keyframes cardin{from{opacity:0;transform:translateY(-6px)}to{opacity:1;transform:translateY(0)}}
 
-  #feed::-webkit-scrollbar { width: 4px; }
-  #feed::-webkit-scrollbar-track { background: transparent; }
-  #feed::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+/* Card sizes */
+.card-xl{border-width:1px}
+.card-sm{padding:8px 12px;display:flex;align-items:center;gap:10px}
 
-  .feed-entry {
-    background: var(--panel);
-    border: 1px solid var(--border);
-    border-left: 3px solid var(--accent);
-    border-radius: 4px;
-    padding: 10px 12px;
-    animation: slideIn 0.3s ease;
-  }
+/* Card accent strips */
+.card-bull{border-left:3px solid var(--green)}
+.card-bear{border-left:3px solid var(--red)}
+.card-neutral{border-left:3px solid var(--muted2)}
+.card-news{border-left:3px solid var(--purple)}
+.card-warning{border-left:3px solid var(--amber)}
+.card-signal{border-left:3px solid var(--cyan)}
 
-  .feed-entry.bull { border-left-color: var(--green); }
-  .feed-entry.bear { border-left-color: var(--red); }
-  .feed-entry.choch { border-left-color: var(--yellow); }
+/* Card header */
+.card-head{
+  padding:8px 12px 6px;
+  display:flex;
+  align-items:center;
+  gap:8px;
+  border-bottom:1px solid var(--border);
+}
 
-  @keyframes slideIn {
-    from { opacity: 0; transform: translateY(-8px); }
-    to { opacity: 1; transform: translateY(0); }
-  }
+.card-headline{
+  font-size:12px;
+  font-weight:700;
+  text-transform:uppercase;
+  letter-spacing:1px;
+  font-family:var(--mono);
+}
 
-  .feed-meta {
-    display: flex;
-    gap: 10px;
-    margin-bottom: 6px;
-    align-items: center;
-  }
+.card-time{font-size:10px;color:var(--muted);font-family:var(--mono);margin-left:auto}
+.card-price{font-size:11px;color:var(--amber);font-family:var(--mono);font-weight:600}
 
-  .feed-time {
-    font-size: 10px;
-    color: var(--muted);
-  }
+/* Tags */
+.tag{
+  font-size:9px;
+  font-family:var(--mono);
+  font-weight:600;
+  text-transform:uppercase;
+  letter-spacing:1px;
+  padding:2px 7px;
+  border-radius:3px;
+}
+.tag-bull{background:rgba(16,185,129,.15);color:var(--green);border:1px solid rgba(16,185,129,.3)}
+.tag-bear{background:rgba(239,68,68,.15);color:var(--red);border:1px solid rgba(239,68,68,.3)}
+.tag-sweep{background:rgba(6,182,212,.15);color:var(--cyan);border:1px solid rgba(6,182,212,.3)}
+.tag-choch{background:rgba(245,158,11,.15);color:var(--amber);border:1px solid rgba(245,158,11,.3)}
+.tag-news{background:rgba(139,92,246,.15);color:var(--purple);border:1px solid rgba(139,92,246,.3)}
+.tag-signal{background:rgba(6,182,212,.2);color:var(--cyan);border:1px solid rgba(6,182,212,.4)}
+.tag-debrief{background:rgba(245,158,11,.1);color:var(--amber);border:1px solid rgba(245,158,11,.2)}
 
-  .feed-price {
-    font-size: 10px;
-    color: var(--yellow);
-    font-weight: bold;
-  }
+/* Card body */
+.card-body{padding:10px 12px}
+.card-text{font-size:13px;line-height:1.6;color:var(--white)}
+.card-text-sm{font-size:12px;line-height:1.5;color:#cbd5e1}
 
-  .feed-event {
-    font-size: 9px;
-    padding: 2px 6px;
-    border-radius: 2px;
-    text-transform: uppercase;
-    letter-spacing: 1px;
-    background: rgba(0,212,255,0.1);
-    color: var(--accent);
-  }
+/* Bullet list style */
+.card-bullets{padding:8px 12px 10px;display:flex;flex-direction:column;gap:4px}
+.bullet-item{font-size:12px;color:#94a3b8;display:flex;gap:8px;line-height:1.5}
+.bullet-dot{color:var(--cyan);font-size:10px;margin-top:3px;flex-shrink:0}
 
-  .feed-event.bull { background: rgba(0,255,136,0.1); color: var(--green); }
-  .feed-event.bear { background: rgba(255,56,96,0.1); color: var(--red); }
-  .feed-event.choch { background: rgba(255,215,0,0.1); color: var(--yellow); }
+/* Zone box */
+.zone-box{
+  margin:0 12px 10px;
+  background:rgba(6,182,212,.05);
+  border:1px solid rgba(6,182,212,.15);
+  border-radius:4px;
+  padding:8px 10px;
+  display:flex;
+  gap:16px;
+  flex-wrap:wrap;
+}
+.zone-stat{display:flex;flex-direction:column;gap:2px}
+.zone-label{font-size:9px;color:var(--muted);font-family:var(--mono);text-transform:uppercase;letter-spacing:1px}
+.zone-value{font-size:12px;font-family:var(--mono);font-weight:600;color:var(--cyan)}
 
-  .feed-text {
-    font-size: 13px;
-    line-height: 1.5;
-    color: var(--text);
-  }
+/* GO LONG / GO SHORT cards */
+.card-go-long{
+  background:linear-gradient(135deg,rgba(16,185,129,.08) 0%,var(--surface) 60%);
+  border:1px solid rgba(16,185,129,.3);
+  border-left:4px solid var(--green);
+}
+.card-go-short{
+  background:linear-gradient(135deg,rgba(239,68,68,.08) 0%,var(--surface) 60%);
+  border:1px solid rgba(239,68,68,.3);
+  border-left:4px solid var(--red);
+}
 
-  #feed-placeholder {
-    color: var(--muted);
-    font-size: 12px;
-    text-align: center;
-    margin-top: 40px;
-    line-height: 2;
-  }
+/* Session banner */
+.session-banner{
+  padding:7px 12px;
+  border-radius:4px;
+  font-size:11px;
+  font-family:var(--mono);
+  font-weight:600;
+  text-transform:uppercase;
+  letter-spacing:1.5px;
+  display:flex;
+  align-items:center;
+  gap:8px;
+  border:1px solid;
+}
+.session-london{background:rgba(16,185,129,.08);border-color:rgba(16,185,129,.2);color:var(--green)}
+.session-ny{background:rgba(6,182,212,.08);border-color:rgba(6,182,212,.2);color:var(--cyan)}
+.session-overlap{background:rgba(245,158,11,.08);border-color:rgba(245,158,11,.2);color:var(--amber)}
+.session-asia{background:rgba(74,85,104,.08);border-color:rgba(74,85,104,.2);color:var(--muted)}
+.session-dead{background:rgba(74,85,104,.05);border-color:rgba(74,85,104,.15);color:var(--muted)}
 
-  /* RIGHT — CHAT */
-  #chat-panel {
-    width: 45%;
-    display: flex;
-    flex-direction: column;
-  }
+/* News card */
+.news-card-inner{padding:8px 12px 10px}
+.news-source{font-size:9px;font-family:var(--mono);color:var(--purple);text-transform:uppercase;letter-spacing:1px}
+.news-headline{font-size:12px;color:var(--white);line-height:1.5;margin-top:3px}
+.news-time{font-size:10px;color:var(--muted);font-family:var(--mono);margin-top:4px}
 
-  #chat-title {
-    padding: 10px 16px;
-    font-size: 10px;
-    color: var(--muted);
-    text-transform: uppercase;
-    letter-spacing: 2px;
-    border-bottom: 1px solid var(--border);
-    background: var(--panel);
-    flex-shrink: 0;
-  }
+/* Small snapshot card */
+.snap-card{
+  padding:8px 12px;
+  display:flex;
+  align-items:center;
+  gap:10px;
+  border-radius:4px;
+  border:1px solid var(--border);
+  background:var(--surface);
+  animation:cardin .2s ease;
+}
+.snap-icon{font-size:14px;flex-shrink:0}
+.snap-text{font-size:12px;color:#94a3b8;line-height:1.4;font-family:var(--mono)}
 
-  #chat-messages {
-    flex: 1;
-    overflow-y: auto;
-    padding: 12px;
-    display: flex;
-    flex-direction: column;
-    gap: 10px;
-  }
+/* CHAT PANEL */
+#chat-col{
+  width:380px;
+  flex-shrink:0;
+  display:flex;
+  flex-direction:column;
+  background:var(--surface);
+}
 
-  #chat-messages::-webkit-scrollbar { width: 4px; }
-  #chat-messages::-webkit-scrollbar-track { background: transparent; }
-  #chat-messages::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+#chat-header{
+  padding:10px 16px;
+  border-bottom:1px solid var(--border);
+  display:flex;
+  align-items:center;
+  gap:8px;
+  flex-shrink:0;
+}
+.chat-title{font-size:10px;font-family:var(--mono);color:var(--muted);text-transform:uppercase;letter-spacing:2px}
 
-  .msg {
-    display: flex;
-    flex-direction: column;
-    gap: 3px;
-    animation: slideIn 0.2s ease;
-  }
+#chat-msgs{
+  flex:1;
+  overflow-y:auto;
+  padding:12px;
+  display:flex;
+  flex-direction:column;
+  gap:10px;
+}
+#chat-msgs::-webkit-scrollbar{width:3px}
+#chat-msgs::-webkit-scrollbar-thumb{background:var(--border2)}
 
-  .msg.user { align-items: flex-end; }
-  .msg.santosh { align-items: flex-start; }
+.chat-intro{
+  background:rgba(245,158,11,.05);
+  border:1px solid rgba(245,158,11,.15);
+  border-radius:6px;
+  padding:12px;
+  font-size:12px;
+  color:#94a3b8;
+  line-height:1.7;
+  text-align:center;
+}
+.chat-intro strong{color:var(--amber)}
 
-  .msg-bubble {
-    padding: 8px 12px;
-    border-radius: 6px;
-    font-size: 13px;
-    line-height: 1.5;
-    max-width: 85%;
-  }
+.msg{display:flex;flex-direction:column;gap:3px;animation:cardin .2s ease}
+.msg.user{align-items:flex-end}
+.msg.santosh{align-items:flex-start}
+.msg-name{font-size:9px;font-family:var(--mono);color:var(--muted);text-transform:uppercase;letter-spacing:1px;padding:0 4px}
+.msg-bubble{padding:9px 13px;border-radius:6px;font-size:13px;line-height:1.55;max-width:90%}
+.msg.user .msg-bubble{background:rgba(245,158,11,.1);border:1px solid rgba(245,158,11,.2);color:var(--amber)}
+.msg.santosh .msg-bubble{background:var(--surface2);border:1px solid var(--border);color:var(--white)}
 
-  .msg.user .msg-bubble {
-    background: rgba(0,212,255,0.12);
-    border: 1px solid rgba(0,212,255,0.2);
-    color: var(--accent);
-  }
+.typing{display:flex;gap:4px;padding:10px 13px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;width:fit-content}
+.t-dot{width:5px;height:5px;border-radius:50%;background:var(--amber);animation:tbounce 1.2s infinite}
+.t-dot:nth-child(2){animation-delay:.2s}
+.t-dot:nth-child(3){animation-delay:.4s}
+@keyframes tbounce{0%,60%,100%{transform:translateY(0);opacity:.4}30%{transform:translateY(-5px);opacity:1}}
 
-  .msg.santosh .msg-bubble {
-    background: var(--panel);
-    border: 1px solid var(--border);
-    color: var(--text);
-  }
+#chat-input-wrap{
+  padding:10px 12px;
+  border-top:1px solid var(--border);
+  display:flex;
+  gap:8px;
+  flex-shrink:0;
+  background:var(--surface);
+}
+#chat-input{
+  flex:1;background:var(--bg);border:1px solid var(--border);border-radius:4px;
+  color:var(--white);font-family:var(--mono);font-size:12px;padding:8px 11px;
+  outline:none;resize:none;height:36px;line-height:1.4;transition:border-color .15s;
+}
+#chat-input:focus{border-color:var(--amber)}
+#chat-input::placeholder{color:var(--muted)}
+#send-btn{
+  background:var(--amber);color:#000;border:none;border-radius:4px;
+  padding:8px 14px;font-family:var(--mono);font-size:11px;font-weight:600;
+  cursor:pointer;letter-spacing:1px;transition:opacity .15s;flex-shrink:0;
+}
+#send-btn:hover{opacity:.85}
+#send-btn:disabled{opacity:.4;cursor:not-allowed}
 
-  .msg-name {
-    font-size: 9px;
-    color: var(--muted);
-    text-transform: uppercase;
-    letter-spacing: 1px;
-    padding: 0 4px;
-  }
+/* NEWS TICKER at very bottom */
+#news-ticker{
+  height:28px;
+  background:var(--surface2);
+  border-top:1px solid var(--border);
+  overflow:hidden;
+  flex-shrink:0;
+  display:flex;
+  align-items:center;
+}
+.ticker-label-small{
+  font-size:9px;font-family:var(--mono);font-weight:600;
+  color:var(--amber);text-transform:uppercase;letter-spacing:1px;
+  padding:0 12px;border-right:1px solid var(--border);height:100%;
+  display:flex;align-items:center;flex-shrink:0;
+}
+#ticker-scroll{
+  flex:1;overflow:hidden;white-space:nowrap;
+  font-size:11px;font-family:var(--mono);color:#64748b;
+}
+#ticker-inner{display:inline-block;animation:tickerscroll 60s linear infinite}
+@keyframes tickerscroll{from{transform:translateX(100vw)}to{transform:translateX(-100%)}}
 
-  .typing-indicator {
-    display: flex;
-    gap: 4px;
-    padding: 10px 12px;
-    background: var(--panel);
-    border: 1px solid var(--border);
-    border-radius: 6px;
-    width: fit-content;
-  }
-
-  .typing-dot {
-    width: 6px;
-    height: 6px;
-    border-radius: 50%;
-    background: var(--accent);
-    animation: typingBounce 1.2s infinite;
-  }
-
-  .typing-dot:nth-child(2) { animation-delay: 0.2s; }
-  .typing-dot:nth-child(3) { animation-delay: 0.4s; }
-
-  @keyframes typingBounce {
-    0%, 60%, 100% { transform: translateY(0); opacity: 0.4; }
-    30% { transform: translateY(-6px); opacity: 1; }
-  }
-
-  /* CHAT INPUT */
-  #chat-input-area {
-    padding: 12px;
-    border-top: 1px solid var(--border);
-    background: var(--panel);
-    display: flex;
-    gap: 8px;
-    flex-shrink: 0;
-  }
-
-  #chat-input {
-    flex: 1;
-    background: var(--bg);
-    border: 1px solid var(--border);
-    border-radius: 4px;
-    color: var(--text);
-    font-family: 'Courier New', monospace;
-    font-size: 13px;
-    padding: 8px 12px;
-    outline: none;
-    resize: none;
-    height: 38px;
-    line-height: 1.4;
-    transition: border-color 0.2s;
-  }
-
-  #chat-input:focus { border-color: var(--accent); }
-
-  #chat-input::placeholder { color: var(--muted); }
-
-  #send-btn {
-    background: var(--accent);
-    color: var(--bg);
-    border: none;
-    border-radius: 4px;
-    padding: 8px 16px;
-    font-family: 'Courier New', monospace;
-    font-size: 12px;
-    font-weight: bold;
-    cursor: pointer;
-    letter-spacing: 1px;
-    transition: opacity 0.2s;
-    flex-shrink: 0;
-  }
-
-  #send-btn:hover { opacity: 0.85; }
-  #send-btn:disabled { opacity: 0.4; cursor: not-allowed; }
-
-  /* Intro message */
-  .intro-msg {
-    background: rgba(0,212,255,0.05);
-    border: 1px solid rgba(0,212,255,0.15);
-    border-radius: 6px;
-    padding: 12px;
-    font-size: 12px;
-    color: var(--muted);
-    line-height: 1.7;
-    text-align: center;
-  }
-
-  .intro-msg span { color: var(--accent); font-weight: bold; }
-
-  @media (max-width: 700px) {
-    #main { flex-direction: column; }
-    #feed-panel { width: 100%; height: 50%; border-right: none; border-bottom: 1px solid var(--border); }
-    #chat-panel { width: 100%; height: 50%; }
-  }
+@media(max-width:700px){
+  #chat-col{display:none}
+  #feed-col{border:none}
+}
 </style>
 </head>
 <body>
 
-<div id="header">
-  <div id="santosh-name">⚡ SANTOSH</div>
-  <div class="header-stat">
-    <span class="label">Price</span>
-    <span class="value" id="price-val">—</span>
+<div id="topbar">
+  <div id="brand"><span class="bolt">⚡</span>SANTOSH</div>
+  <div class="ticker-item">
+    <span class="ticker-label">BTC/USD</span>
+    <span class="ticker-value" id="price-val">—</span>
   </div>
-  <div class="header-stat">
-    <span class="label">Bias</span>
-    <span class="value" id="bias-val">—</span>
+  <div class="ticker-item">
+    <span class="ticker-label">Bias</span>
+    <span class="ticker-value" id="bias-val">—</span>
   </div>
-  <div class="header-stat">
-    <span class="label">Score</span>
-    <span class="value" id="score-val">—/5</span>
+  <div class="ticker-item">
+    <span class="ticker-label">Score</span>
+    <span class="ticker-value" id="score-val">—/5</span>
   </div>
-  <div class="header-stat">
-    <span class="label">Last Event</span>
-    <span class="value" id="event-val" style="font-size:11px; color: var(--muted)">Waiting...</span>
+  <div class="ticker-item">
+    <span class="ticker-label">Session</span>
+    <span class="ticker-value" id="session-val">—</span>
   </div>
-  <div class="status-dot" id="status-dot"></div>
+  <div class="ticker-item">
+    <span class="ticker-label">Last Event</span>
+    <span class="ticker-value" id="event-val" style="font-size:11px;color:var(--muted)">Waiting...</span>
+  </div>
+  <div class="live-dot" id="live-dot"></div>
 </div>
 
 <div id="main">
-  <div id="feed-panel">
-    <div id="feed-title">📡 Live Commentary</div>
-    <div id="feed">
-      <div id="feed-placeholder">
-        Waiting for market data...<br>
-        <span style="font-size:10px">Webhooks will appear here automatically</span>
-      </div>
+  <div id="feed-col">
+    <div id="feed-header">
+      <span class="feed-title">⚡ Live Feed</span>
+      <span class="feed-count" id="feed-count">0 events</span>
     </div>
+    <div id="feed"></div>
   </div>
 
-  <div id="chat-panel">
-    <div id="chat-title">💬 Ask Santosh</div>
-    <div id="chat-messages">
-      <div class="intro-msg">
-        <span>Santosh here.</span><br>
-        Watching the chart. Ask me anything — setup quality, bias check, whether to wait or go. I'll tell you straight.
+  <div id="chat-col">
+    <div id="chat-header">
+      <span class="chat-title">💬 Ask Santosh</span>
+    </div>
+    <div id="chat-msgs">
+      <div class="chat-intro">
+        <strong>Santosh here.</strong><br>
+        Watching the chart. Ask me about any setup, bias, entry levels, or what I'm seeing right now.
       </div>
     </div>
-    <div id="chat-input-area">
-      <textarea id="chat-input" placeholder="Ask Santosh anything..." rows="1"></textarea>
+    <div id="chat-input-wrap">
+      <textarea id="chat-input" placeholder="Ask Santosh..." rows="1"></textarea>
       <button id="send-btn">SEND</button>
     </div>
   </div>
 </div>
 
+<div id="news-ticker">
+  <div class="ticker-label-small">LIVE</div>
+  <div id="ticker-scroll"><span id="ticker-inner">Loading market intel...</span></div>
+</div>
+
 <script>
-  // State
-  let lastFeedTimestamp = null;
-  let marketContext = { price: null, bias: null, bull_score: null, bear_score: null };
-  let sessionId = 'session_' + Date.now();
-  let isWaiting = false;
+const SESSION_ID = 'session_' + Date.now();
+let lastFeedTs = null;
+let marketCtx = {};
+let isWaiting = false;
+let feedCount = 0;
 
-  // Event type classification
-  function getEventClass(eventType) {
-    if (!eventType) return '';
-    if (['bull_bos','choch_bull','b_sweep','go_long'].includes(eventType)) return 'bull';
-    if (['bear_bos','choch_bear','s_sweep','go_short'].includes(eventType)) return 'bear';
-    if (['choch_bull','choch_bear'].includes(eventType)) return 'choch';
-    return '';
-  }
+// ── SESSION ──────────────────────────────────────────────────
+function getSession() {
+  const h = new Date().getUTCHours();
+  const m = new Date().getUTCMinutes();
+  const t = h + m/60;
+  if (t>=13&&t<16) return {label:'LON/NY OVERLAP',cls:'session-overlap',icon:'🔥'};
+  if (t>=7&&t<12)  return {label:'LONDON OPEN',cls:'session-london',icon:'🇬🇧'};
+  if (t>=12&&t<13) return {label:'PRE-NY',cls:'session-ny',icon:'⚡'};
+  if (t>=16&&t<21) return {label:'NEW YORK',cls:'session-ny',icon:'🗽'};
+  if (t>=21&&t<23) return {label:'SESSION CLOSE',cls:'session-dead',icon:'📉'};
+  return {label:'ASIAN / DEAD ZONE',cls:'session-asia',icon:'😴'};
+}
 
-  function formatEventLabel(eventType) {
-    const labels = {
-      bull_bos: 'Bull BOS',
-      bear_bos: 'Bear BOS',
-      choch_bull: 'CHoCH Bull',
-      choch_bear: 'CHoCH Bear',
-      b_sweep: 'Buy Sweep',
-      s_sweep: 'Sell Sweep',
-      go_long: '🟢 GO LONG',
-      go_short: '🔴 GO SHORT',
-      zone_confirmed: 'Zone Confirmed',
-      periodic: 'Market Check'
-    };
-    return labels[eventType] || eventType || 'Update';
-  }
+function updateSessionDisplay() {
+  const s = getSession();
+  document.getElementById('session-val').textContent = s.label;
+}
+updateSessionDisplay();
+setInterval(updateSessionDisplay, 60000);
 
-  function formatTime(isoStr) {
-    try {
-      const d = new Date(isoStr);
-      return d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-    } catch { return '--:--:--'; }
-  }
+// ── TIME FORMAT ───────────────────────────────────────────────
+function fmtTime(iso) {
+  try {
+    return new Date(iso).toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
+  } catch { return '--:--:--'; }
+}
 
-  // Poll the feed every 3 seconds
-  async function pollFeed() {
-    try {
-      const res = await fetch('/analyst-feed');
-      const data = await res.json();
+// ── EVENT TYPE HELPERS ────────────────────────────────────────
+function getCardConfig(eventType, bias) {
+  const map = {
+    go_long:          {tag:'🚀 GO LONG',tagCls:'tag-signal',cardCls:'card-go-long card-xl',size:'xl'},
+    go_short:         {tag:'🔻 GO SHORT',tagCls:'tag-signal',cardCls:'card-go-short card-xl',size:'xl'},
+    bull_bos:         {tag:'BOS BULL',tagCls:'tag-bull',cardCls:'card card-bull',size:'md'},
+    bear_bos:         {tag:'BOS BEAR',tagCls:'tag-bear',cardCls:'card card-bear',size:'md'},
+    choch_bull:       {tag:'CHoCH ▲',tagCls:'tag-choch',cardCls:'card card-warning',size:'md'},
+    choch_bear:       {tag:'CHoCH ▼',tagCls:'tag-choch',cardCls:'card card-warning',size:'md'},
+    b_sweep:          {tag:'BUY SWEEP',tagCls:'tag-sweep',cardCls:'card card-bull',size:'md'},
+    s_sweep:          {tag:'SELL SWEEP',tagCls:'tag-sweep',cardCls:'card card-bear',size:'md'},
+    dashboard_update: {tag:'DASHBOARD',tagCls:'tag-news',cardCls:'card card-signal',size:'sm'},
+    debrief:          {tag:'DEBRIEF',tagCls:'tag-debrief',cardCls:'card card-warning',size:'md'},
+    periodic:         {tag:'MARKET CHECK',tagCls:'tag-news',cardCls:'card card-neutral',size:'sm'},
+  };
+  return map[eventType] || {tag:'UPDATE',tagCls:'tag-news',cardCls:'card card-neutral',size:'sm'};
+}
 
-      if (data.feed && data.feed.length > 0) {
-        const latest = data.feed[0];
+// ── BUILD FEED CARD ───────────────────────────────────────────
+function buildCard(entry) {
+  const cfg = getCardConfig(entry.event_type, entry.bias);
+  const time = fmtTime(entry.timestamp);
+  const price = entry.price ? '$' + Number(entry.price).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2}) : '';
 
-        // Update header
-        if (latest.price) {
-          marketContext = {
-            price: latest.price,
-            bias: latest.bias,
-            bull_score: latest.bull_score,
-            bear_score: latest.bear_score
-          };
-          document.getElementById('price-val').textContent = '$' + Number(latest.price).toLocaleString();
-
-          const biasEl = document.getElementById('bias-val');
-          biasEl.textContent = (latest.bias || '—').toUpperCase();
-          biasEl.style.color = latest.bias === 'bull' ? 'var(--green)' : latest.bias === 'bear' ? 'var(--red)' : 'var(--muted)';
-
-          const score = latest.bias === 'bull' ? latest.bull_score : latest.bear_score;
-          document.getElementById('score-val').textContent = (score || '—') + '/5';
-          document.getElementById('event-val').textContent = formatEventLabel(latest.event_type);
-        }
-
-        // Check if there's a new entry
-        if (latest.timestamp !== lastFeedTimestamp) {
-          lastFeedTimestamp = latest.timestamp;
-          renderFeed(data.feed);
-          document.getElementById('status-dot').className = 'status-dot';
-        }
-      }
-    } catch (err) {
-      document.getElementById('status-dot').className = 'status-dot offline';
-    }
-  }
-
-  function renderFeed(feed) {
-    const container = document.getElementById('feed');
-    const placeholder = document.getElementById('feed-placeholder');
-    if (placeholder) placeholder.remove();
-
-    // Only add new entries (check timestamps)
-    const existing = container.querySelectorAll('.feed-entry');
-    const existingCount = existing.length;
-    const newEntries = feed.slice(0, Math.max(1, feed.length - existingCount + 1));
-
-    newEntries.forEach(entry => {
-      // Check if already rendered
-      const alreadyExists = Array.from(existing).some(el => el.dataset.ts === entry.timestamp);
-      if (alreadyExists) return;
-
-      const cls = getEventClass(entry.event_type);
-      const div = document.createElement('div');
-      div.className = `feed-entry ${cls}`;
-      div.dataset.ts = entry.timestamp;
-      div.innerHTML = `
-        <div class="feed-meta">
-          <span class="feed-time">${formatTime(entry.timestamp)}</span>
-          <span class="feed-price">${entry.price ? '$' + Number(entry.price).toLocaleString() : ''}</span>
-          <span class="feed-event ${cls}">${formatEventLabel(entry.event_type)}</span>
-        </div>
-        <div class="feed-text">${entry.commentary}</div>
-      `;
-      container.insertBefore(div, container.firstChild);
-    });
-
-    // Trim to 30
-    const all = container.querySelectorAll('.feed-entry');
-    if (all.length > 30) {
-      for (let i = 30; i < all.length; i++) all[i].remove();
-    }
-  }
-
-  // Send chat message
-  async function sendMessage() {
-    const input = document.getElementById('chat-input');
-    const msg = input.value.trim();
-    if (!msg || isWaiting) return;
-
-    input.value = '';
-    isWaiting = true;
-    document.getElementById('send-btn').disabled = true;
-
-    // Add user message
-    appendMessage('user', 'You', msg);
-
-    // Add typing indicator
-    const typingEl = document.createElement('div');
-    typingEl.className = 'msg santosh';
-    typingEl.id = 'typing';
-    typingEl.innerHTML = `
-      <span class="msg-name">Santosh</span>
-      <div class="typing-indicator">
-        <div class="typing-dot"></div>
-        <div class="typing-dot"></div>
-        <div class="typing-dot"></div>
-      </div>
-    `;
-    document.getElementById('chat-messages').appendChild(typingEl);
-    scrollChat();
-
-    try {
-      const res = await fetch('/analyst-chat', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: msg, sessionId, marketContext })
-      });
-      const data = await res.json();
-
-      typingEl.remove();
-
-      if (data.reply) {
-        appendMessage('santosh', 'Santosh', data.reply);
-      } else {
-        appendMessage('santosh', 'Santosh', 'Something went wrong on my end. Try again.');
-      }
-    } catch (err) {
-      typingEl.remove();
-      appendMessage('santosh', 'Santosh', 'Lost connection. Check the server.');
-    }
-
-    isWaiting = false;
-    document.getElementById('send-btn').disabled = false;
-    input.focus();
-  }
-
-  function appendMessage(role, name, text) {
-    const container = document.getElementById('chat-messages');
+  if (cfg.size === 'sm') {
+    // Small snapshot card
     const div = document.createElement('div');
-    div.className = `msg ${role}`;
+    div.className = 'snap-card';
+    div.dataset.ts = entry.timestamp;
     div.innerHTML = `
-      <span class="msg-name">${name}</span>
-      <div class="msg-bubble">${text}</div>
-    `;
-    container.appendChild(div);
-    scrollChat();
+      <span class="snap-icon">📡</span>
+      <div style="flex:1">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:3px">
+          <span class="tag ${cfg.tagCls}">${cfg.tag}</span>
+          <span style="font-size:10px;color:var(--muted);font-family:var(--mono)">${time}</span>
+          ${price ? `<span style="font-size:11px;color:var(--amber);font-family:var(--mono);margin-left:auto">${price}</span>` : ''}
+        </div>
+        <div class="snap-text">${entry.commentary}</div>
+      </div>`;
+    return div;
   }
 
-  function scrollChat() {
-    const c = document.getElementById('chat-messages');
-    c.scrollTop = c.scrollHeight;
-  }
+  if (cfg.size === 'xl') {
+    // GO LONG / GO SHORT — large card
+    const isLong = entry.event_type === 'go_long';
+    const div = document.createElement('div');
+    div.className = cfg.cardCls;
+    div.dataset.ts = entry.timestamp;
+    div.style.borderRadius = '6px';
+    div.style.overflow = 'hidden';
 
-  // Event listeners
-  document.getElementById('send-btn').addEventListener('click', sendMessage);
-  document.getElementById('chat-input').addEventListener('keydown', (e) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault();
-      sendMessage();
+    let zoneHtml = '';
+    if (entry.zone_active && entry.zone_mid) {
+      zoneHtml = `
+        <div class="zone-box">
+          <div class="zone-stat"><span class="zone-label">Entry (midline)</span><span class="zone-value">${entry.zone_mid}</span></div>
+          <div class="zone-stat"><span class="zone-label">TP</span><span class="zone-value" style="color:var(--green)">${entry.tp_level||'—'}</span></div>
+          <div class="zone-stat"><span class="zone-label">SL</span><span class="zone-value" style="color:var(--red)">${entry.sl_level||'—'}</span></div>
+        </div>`;
     }
-  });
 
-  // Start polling
-  pollFeed();
-  setInterval(pollFeed, 3000);
+    div.innerHTML = `
+      <div class="card-head">
+        <span class="tag ${cfg.tagCls}" style="font-size:11px;padding:3px 10px">${cfg.tag}</span>
+        <span class="card-price">${price}</span>
+        <span class="card-time">${time}</span>
+      </div>
+      <div class="card-body">
+        <div class="card-text">${entry.commentary}</div>
+      </div>
+      ${zoneHtml}`;
+    return div;
+  }
+
+  // Medium card — BOS, CHoCH, sweeps, debrief
+  const div = document.createElement('div');
+  div.className = cfg.cardCls;
+  div.dataset.ts = entry.timestamp;
+
+  // Vary format — some get bullets if text has multiple sentences
+  const sentences = entry.commentary.split(/(?<=[.!?])\s+/).filter(s => s.length > 10);
+  let bodyHtml = '';
+
+  if (entry.event_type === 'debrief' && sentences.length >= 2) {
+    // Debrief gets bullet format
+    bodyHtml = `<div class="card-bullets">${sentences.map(s=>`
+      <div class="bullet-item"><span class="bullet-dot">▸</span><span>${s}</span></div>`).join('')}
+    </div>`;
+  } else {
+    bodyHtml = `<div class="card-body"><div class="card-text-sm">${entry.commentary}</div></div>`;
+  }
+
+  div.innerHTML = `
+    <div class="card-head">
+      <span class="tag ${cfg.tagCls}">${cfg.tag}</span>
+      <span class="card-price">${price}</span>
+      <span class="card-time">${time}</span>
+    </div>
+    ${bodyHtml}`;
+  return div;
+}
+
+// ── SESSION BANNER ────────────────────────────────────────────
+let lastSessionLabel = '';
+function maybeAddSessionBanner() {
+  const s = getSession();
+  if (s.label === lastSessionLabel) return;
+  lastSessionLabel = s.label;
+  const div = document.createElement('div');
+  div.className = `session-banner ${s.cls}`;
+  div.innerHTML = `<span>${s.icon}</span><span>${s.label}</span><span style="margin-left:auto;font-size:9px;opacity:.6">${new Date().toUTCString().slice(17,22)} UTC</span>`;
+  prependToFeed(div);
+}
+
+function prependToFeed(el) {
+  const feed = document.getElementById('feed');
+  const placeholder = document.getElementById('feed-placeholder');
+  if (placeholder) placeholder.remove();
+  feed.insertBefore(el, feed.firstChild);
+  feedCount++;
+  document.getElementById('feed-count').textContent = feedCount + ' events';
+  // Trim
+  while (feed.children.length > 50) feed.removeChild(feed.lastChild);
+}
+
+// ── POLL FEED ─────────────────────────────────────────────────
+async function pollFeed() {
+  try {
+    const res = await fetch('/analyst-feed');
+    const data = await res.json();
+    if (!data.feed || !data.feed.length) return;
+
+    const latest = data.feed[0];
+
+    // Update header
+    if (latest.price) {
+      marketCtx = latest;
+      document.getElementById('price-val').textContent = '$' + Number(latest.price).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2});
+      const biasEl = document.getElementById('bias-val');
+      const bias = latest.bias?.toUpperCase() || '—';
+      biasEl.textContent = bias;
+      biasEl.style.color = latest.bias==='bull' ? 'var(--green)' : latest.bias==='bear' ? 'var(--red)' : 'var(--muted)';
+      const score = latest.bias==='bull' ? latest.bull_score : latest.bear_score;
+      document.getElementById('score-val').textContent = (score||'—') + '/5';
+      document.getElementById('event-val').textContent = (latest.event_type||'').replace(/_/g,' ').toUpperCase();
+      document.getElementById('live-dot').style.background = 'var(--green)';
+    }
+
+    if (latest.timestamp !== lastFeedTs) {
+      lastFeedTs = latest.timestamp;
+      maybeAddSessionBanner();
+      const card = buildCard(latest);
+      prependToFeed(card);
+    }
+  } catch(e) {
+    document.getElementById('live-dot').style.background = 'var(--red)';
+  }
+}
+
+// Add feed placeholder
+document.getElementById('feed').innerHTML = `
+  <div id="feed-placeholder" style="text-align:center;color:var(--muted);font-size:12px;font-family:var(--mono);margin-top:40px;line-height:2.2">
+    WAITING FOR MARKET DATA<br>
+    <span style="font-size:10px;color:var(--muted2)">Webhooks will appear here automatically</span>
+  </div>`;
+
+// ── NEWS TICKER ───────────────────────────────────────────────
+async function updateTicker() {
+  try {
+    const res = await fetch('/api/intel');
+    const data = await res.json();
+    if (data.items && data.items.length) {
+      const text = data.items.slice(0,8).map(i => `${i.source}: ${i.headline}`).join('   ·   ');
+      document.getElementById('ticker-inner').textContent = text;
+    }
+  } catch(e) {}
+}
+updateTicker();
+setInterval(updateTicker, 60000);
+
+// ── CHAT ─────────────────────────────────────────────────────
+function appendMsg(role, name, text) {
+  const c = document.getElementById('chat-msgs');
+  const d = document.createElement('div');
+  d.className = `msg ${role}`;
+  d.innerHTML = `<span class="msg-name">${name}</span><div class="msg-bubble">${text}</div>`;
+  c.appendChild(d);
+  c.scrollTop = c.scrollHeight;
+}
+
+async function sendMsg() {
+  const inp = document.getElementById('chat-input');
+  const msg = inp.value.trim();
+  if (!msg || isWaiting) return;
+  inp.value = '';
+  isWaiting = true;
+  document.getElementById('send-btn').disabled = true;
+  appendMsg('user','You', msg);
+
+  const typingEl = document.createElement('div');
+  typingEl.className = 'msg santosh';
+  typingEl.id = 'typing-indicator';
+  typingEl.innerHTML = `<span class="msg-name">Santosh</span><div class="typing"><div class="t-dot"></div><div class="t-dot"></div><div class="t-dot"></div></div>`;
+  document.getElementById('chat-msgs').appendChild(typingEl);
+  document.getElementById('chat-msgs').scrollTop = 99999;
+
+  try {
+    const res = await fetch('/analyst-chat', {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ message: msg, sessionId: SESSION_ID, marketContext: marketCtx })
+    });
+    const data = await res.json();
+    typingEl.remove();
+    appendMsg('santosh','Santosh', data.reply || 'Something went wrong.');
+  } catch(e) {
+    typingEl.remove();
+    appendMsg('santosh','Santosh','Lost connection — check the server.');
+  }
+
+  isWaiting = false;
+  document.getElementById('send-btn').disabled = false;
+  inp.focus();
+}
+
+document.getElementById('send-btn').addEventListener('click', sendMsg);
+document.getElementById('chat-input').addEventListener('keydown', e => {
+  if (e.key==='Enter' && !e.shiftKey) { e.preventDefault(); sendMsg(); }
+});
+
+// ── START ─────────────────────────────────────────────────────
+pollFeed();
+setInterval(pollFeed, 3000);
 </script>
 </body>
 </html>
