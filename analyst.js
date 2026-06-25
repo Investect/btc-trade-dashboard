@@ -1,204 +1,248 @@
-// analyst.js — Santosh Live Trading Analyst
-// Add to your existing server.js: require('./analyst')(app);
-
+// analyst.js v2 — Santosh with full AMN data + post-trade analysis
 const Anthropic = require('@anthropic-ai/sdk');
+const fs = require('fs');
+const path = require('path');
 
-const client = new Anthropic({
-  apiKey: process.env.ANTHROPIC_API_KEY
-});
+const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
-// Rate limiting — max 1 Haiku call per 8 seconds
-let lastCallTime = 0;
 const RATE_LIMIT_MS = 8000;
-
-// Store last 30 auto-commentary entries for the feed
+let lastCallTime = 0;
 const commentaryFeed = [];
-const MAX_FEED_SIZE = 30;
-
-// Conversation history per session (keyed by sessionId)
 const conversations = {};
-const MAX_HISTORY = 10; // keep last 10 exchanges per session
+const MAX_FEED_SIZE = 30;
+const MAX_HISTORY = 10;
 
-const SANTOSH_SYSTEM_PROMPT = `You are Santosh — a professional BTC/USD scalp trader with 8 years experience. You're sitting next to the trader right now, watching the same chart. You trade the AMN Strategy by Adz Trading (Adeel/amntrading1).
+const SANTOSH_SYSTEM = `You are Santosh — a professional BTC/USD scalp trader, 8 years experience. You're physically sitting next to the trader watching the same chart. You trade the AMN Strategy by Adz Trading.
 
-AMN STRATEGY RULES YOU KNOW COLD:
-- BOS (Break of Structure) detected → start counting taps (max 4 on 15s timeframe)
-- Zone draws after 4 taps → enter at 50% midline of zone
-- Minimum 1.1R target, never less
-- Max 3 trades per day. Stop after 2 losses — no exceptions
-- HTF bias: need 2 of 3 timeframes (1m/5m/15m) aligned before entry
-- EMA 9/20 — only trade in direction of trend
-- Wait for liquidity sweep BEFORE entry — no sweep, no trade
-- CHoCH (Change of Character) cancels all pending zones immediately
-- Fresh zones only — if 50% midline already crossed, zone is dead
-- 15 second execution timeframe
+AMN RULES YOU KNOW COLD:
+- BOS → count taps (4 on 15s) → zone draws → enter at 50% midline
+- Minimum 1.1R target always
+- Max 3 trades/day. Stop after 2 losses — no exceptions ever
+- HTF bias: need 2/3 timeframes (1m/5m/15m) aligned — bull_votes or bear_votes >= 2
+- EMA 9/20 — only trade WITH the trend
+- Liquidity sweep BEFORE entry — no sweep = no trade
+- CHoCH cancels ALL pending zones immediately
+- Fresh zones only — 50% midline not crossed
+- zone_active=true means a confirmed zone is live right now
+- zone_top/zone_bottom/zone_mid are the actual price levels
+- tp_level and sl_level are the exact targets
 
 YOUR PERSONALITY:
 - You ARE Santosh. Never break character. Never say "As an AI"
-- Talk like a real trader sitting next to someone — direct, sharp, human
-- Short sentences. No essays. Max 3-4 sentences for auto commentary
-- Volunteer observations when you see something — don't wait to be asked
+- Talk like a real experienced scalper next to someone — direct, sharp, human
+- Short sentences. Max 3-4 sentences for auto commentary
+- Volunteer strong opinions — don't sit on the fence
+- Use exact price levels when you have them: "zone mid is at 59,240 — that's your entry"
 - Be honest — tell them to stay out when setup isn't clean
-- Use trader language naturally: "that sweep just cleared", "zone's fresh", "bias flipped", "don't chase this"
-- Never hedge every sentence or be overly cautious
-- When asked questions — answer directly, plainly, no jargon walls
 - Occasional personality: "that wick was dirty", "classic stop hunt", "beautiful BOS"
+- When asked questions — answer directly, no essays
 
-SIGNAL INTERPRETATION:
-- bull_score/bear_score out of 5 — above 3 is meaningful
-- bos_direction: bull or bear — confirms structure
-- sweep_direction: buy_side or sell_side — liquidity grab
-- tap_count: 1-4, zone confirms at 4
-- choch: true = cancel everything, wait for new structure
-- ema_trend: up/down/flat
-- rsi: oversold <30, overbought >70`;
+READING THE DATA:
+- bull_votes/bear_votes out of 3 — 3/3 is strong, 2/3 is confirmed, 1/3 is weak
+- zone_active=true + go_long/go_short = full confluence, highest probability
+- choch=true = drop everything, all zones cancelled, wait for new structure
+- sweep before zone tap = ideal AMN setup
+- tap_count approaching min_taps (4) = zone about to confirm, get ready`;
 
 function addToFeed(entry) {
-  commentaryFeed.unshift(entry);
-  if (commentaryFeed.length > MAX_FEED_SIZE) {
-    commentaryFeed.pop();
-  }
+    commentaryFeed.unshift(entry);
+    if (commentaryFeed.length > MAX_FEED_SIZE) commentaryFeed.pop();
 }
 
-function buildAutoPrompt(data) {
-  const {
-    price, bias, bull_score, bear_score,
-    bos_direction, sweep_direction, tap_count,
-    rsi, ema_trend, choch, timestamp, event_type
-  } = data;
+function buildAutoPrompt(d) {
+    const eventLabels = {
+        bull_bos: 'Bullish BOS just printed',
+        bear_bos: 'Bearish BOS just printed',
+        choch_bull: 'CHoCH flipped bullish',
+        choch_bear: 'CHoCH flipped bearish',
+        b_sweep: 'Buy-side liquidity sweep',
+        s_sweep: 'Sell-side liquidity sweep',
+        go_long: 'LONG ZONE CONFIRMED — 4 taps complete',
+        go_short: 'SHORT ZONE CONFIRMED — 4 taps complete',
+        zone_confirmed: 'Zone confirmed',
+        periodic: 'Periodic market check'
+    };
 
-  const eventDescriptions = {
-    bull_bos: 'Bullish BOS just printed',
-    bear_bos: 'Bearish BOS just printed',
-    choch_bull: 'CHoCH flipped bullish',
-    choch_bear: 'CHoCH flipped bearish',
-    b_sweep: 'Buy-side liquidity sweep hit',
-    s_sweep: 'Sell-side liquidity sweep hit',
-    go_long: 'LONG signal triggered',
-    go_short: 'SHORT signal triggered',
-    zone_confirmed: 'Zone confirmed at 4 taps',
-    periodic: 'Periodic market check'
-  };
+    const evt = eventLabels[d.event_type] || d.event_type || 'Update';
+    const zoneInfo = d.zone_active ?
+        `\nACTIVE ZONE: ${d.zone_type?.toUpperCase()} | Top: ${d.zone_top} | Bottom: ${d.zone_bottom} | Mid (entry): ${d.zone_mid} | TP: ${d.tp_level} | SL: ${d.sl_level}` : '\nNo active zone';
 
-  const eventDesc = eventDescriptions[event_type] || 'Market update';
+    return `EVENT: ${evt}
+Price: $${d.price}
+HTF Bias: ${d.bias?.toUpperCase()} | Bull votes: ${d.bull_votes}/3 | Bear votes: ${d.bear_votes}/3
+Allow Long: ${d.allow_long} | Allow Short: ${d.allow_short}
+BOS: ${d.bos_direction} | Sweep: ${d.sweep_direction}
+CHoCH: ${d.choch} (${d.choch_direction}) | Tap count: ${d.tap_count}/${d.min_taps}
+EMA: fast ${d.ema_fast?.toFixed ? d.ema_fast.toFixed(0) : d.ema_fast} / slow ${d.ema_slow?.toFixed ? d.ema_slow.toFixed(0) : d.ema_slow} (${d.ema_trend})
+RSI: ${d.rsi} | ATR: ${d.atr}${zoneInfo}
 
-  return `EVENT: ${eventDesc}
-Price: $${price}
-Bias: ${bias} | Bull Score: ${bull_score}/5 | Bear Score: ${bear_score}/5
-BOS: ${bos_direction || 'none'} | Sweep: ${sweep_direction || 'none'}
-Tap Count: ${tap_count}/4 | CHoCH: ${choch ? 'YES - CANCEL ZONES' : 'No'}
-EMA Trend: ${ema_trend} | RSI: ${rsi}
-
-Give your live commentary on this as Santosh. Be direct. Max 3-4 sentences.`;
+Give your live commentary as Santosh. Be direct, use exact price levels. Max 3-4 sentences.`;
 }
+
+function buildPostTradePrompt(trade, marketData) {
+    const won = trade.pnl > 0;
+    const pts = trade.points?.toFixed(1);
+    const pnl = Math.abs(trade.pnl).toFixed(2);
+    const durSec = Math.round((trade.exit_time - trade.entry_time) / 1000);
+    const durStr = durSec < 60 ? `${durSec}s` : `${Math.floor(durSec/60)}m ${durSec%60}s`;
+
+    return `POST-TRADE DEBRIEF REQUEST:
+Trade: ${won ? 'WIN ✅' : 'LOSS ❌'} | ${trade.direction?.toUpperCase()} | ${trade.size} lots
+Entry: $${trade.entry_price} → Exit: $${trade.exit_price}
+Points: ${pts} | P&L: ${won ? '+' : '-'}$${pnl} | Hold time: ${durStr}
+
+Current market context:
+Price now: $${marketData?.price || 'unknown'}
+Current bias: ${marketData?.bias || 'unknown'} (Bull: ${marketData?.bull_votes || 0}/3, Bear: ${marketData?.bear_votes || 0}/3)
+EMA trend: ${marketData?.ema_trend || 'unknown'}
+Zone active: ${marketData?.zone_active || false}
+${marketData?.zone_active ? `Zone: ${marketData.zone_type} | Entry level: ${marketData.zone_mid} | TP: ${marketData.tp_level} | SL: ${marketData.sl_level}` : ''}
+
+Give a brutally honest post-trade debrief as Santosh. Was the entry clean? Did they follow AMN rules? What should they do differently? Keep it to 4-5 sentences max. Be straight with them — no sugarcoating.`;
+}
+
+// Store latest market data for post-trade context
+let latestMarketData = null;
 
 module.exports = function(app) {
 
-  // POST /analyst — receives Pine Script webhook
-  app.post('/analyst', async (req, res) => {
-    try {
-      const now = Date.now();
-      const data = req.body;
+    // POST /analyst — Pine Script webhook
+    app.post('/analyst', async (req, res) => {
+        try {
+            const now = Date.now();
+            const data = req.body;
 
-      // Rate limit check
-      if (now - lastCallTime < RATE_LIMIT_MS) {
-        return res.json({
-          commentary: null,
-          skipped: true,
-          reason: 'rate_limited'
-        });
-      }
+            // Store latest market data
+            latestMarketData = data;
 
-      lastCallTime = now;
+            if (now - lastCallTime < RATE_LIMIT_MS) {
+                return res.json({ commentary: null, skipped: true });
+            }
+            lastCallTime = now;
 
-      const prompt = buildAutoPrompt(data);
+            const prompt = buildAutoPrompt(data);
+            const response = await client.messages.create({
+                model: 'claude-haiku-4-5',
+                max_tokens: 150,
+                system: SANTOSH_SYSTEM,
+                messages: [{ role: 'user', content: prompt }]
+            });
 
-      const response = await client.messages.create({
-        model: 'claude-haiku-4-5',
-        max_tokens: 150,
-        system: SANTOSH_SYSTEM_PROMPT,
-        messages: [{ role: 'user', content: prompt }]
-      });
+            const commentary = response.content[0].text;
+            const entry = {
+                commentary,
+                price: data.price,
+                bias: data.bias,
+                bull_score: data.bull_votes,
+                bear_score: data.bear_votes,
+                event_type: data.event_type,
+                zone_active: data.zone_active,
+                zone_type: data.zone_type,
+                zone_mid: data.zone_mid,
+                go_long: data.event_type === 'go_long',
+                go_short: data.event_type === 'go_short',
+                timestamp: data.timestamp || new Date().toISOString()
+            };
 
-      const commentary = response.content[0].text;
-      const entry = {
-        commentary,
-        price: data.price,
-        bias: data.bias,
-        bull_score: data.bull_score,
-        bear_score: data.bear_score,
-        event_type: data.event_type,
-        timestamp: data.timestamp || new Date().toISOString()
-      };
+            addToFeed(entry);
+            res.json({ commentary, timestamp: entry.timestamp, success: true });
 
-      addToFeed(entry);
+        } catch (err) {
+            console.error('Analyst error:', err.message);
+            res.status(500).json({ error: err.message });
+        }
+    });
 
-      res.json({ commentary, timestamp: entry.timestamp, success: true });
+    // GET /analyst-feed — polled by chat panel
+    app.get('/analyst-feed', (req, res) => {
+        res.json({ feed: commentaryFeed });
+    });
 
-    } catch (err) {
-      console.error('Analyst error:', err.message);
-      res.status(500).json({ error: err.message });
-    }
-  });
+    // POST /analyst-chat — user question
+    app.post('/analyst-chat', async (req, res) => {
+        try {
+            const { message, sessionId = 'default' } = req.body;
+            if (!message?.trim()) return res.status(400).json({ error: 'No message' });
 
-  // GET /analyst-feed — polled every 3s by the chat panel
-  app.get('/analyst-feed', (req, res) => {
-    res.json({ feed: commentaryFeed });
-  });
+            if (!conversations[sessionId]) conversations[sessionId] = [];
+            const history = conversations[sessionId];
 
-  // POST /analyst-chat — user asks Santosh a question
-  app.post('/analyst-chat', async (req, res) => {
-    try {
-      const { message, sessionId = 'default', marketContext } = req.body;
+            // Inject current market context into every question
+            let userContent = message;
+            if (latestMarketData) {
+                const d = latestMarketData;
+                const zoneStr = d.zone_active ?
+                    ` | ${d.zone_type} zone active: entry ${d.zone_mid}, TP ${d.tp_level}, SL ${d.sl_level}` : '';
+                userContent = `[Live: $${d.price} | ${d.bias?.toUpperCase()} ${d.bull_votes}/3 bull | EMA ${d.ema_trend} | RSI ${d.rsi}${zoneStr}]\n\n${message}`;
+            }
 
-      if (!message || message.trim().length === 0) {
-        return res.status(400).json({ error: 'No message provided' });
-      }
+            history.push({ role: 'user', content: userContent });
+            while (history.length > MAX_HISTORY * 2) history.shift();
 
-      // Get or create conversation history
-      if (!conversations[sessionId]) {
-        conversations[sessionId] = [];
-      }
-      const history = conversations[sessionId];
+            const response = await client.messages.create({
+                model: 'claude-haiku-4-5',
+                max_tokens: 250,
+                system: SANTOSH_SYSTEM,
+                messages: history
+            });
 
-      // Build context-aware user message
-      let userContent = message;
-      if (marketContext) {
-        userContent = `[Market context: Price $${marketContext.price}, Bias: ${marketContext.bias}, Bull: ${marketContext.bull_score}/5, Bear: ${marketContext.bear_score}/5]\n\nQuestion: ${message}`;
-      }
+            const reply = response.content[0].text;
+            history.push({ role: 'assistant', content: reply });
 
-      // Add to history
-      history.push({ role: 'user', content: userContent });
+            res.json({ reply, timestamp: new Date().toISOString(), success: true });
 
-      // Trim history to last MAX_HISTORY exchanges
-      while (history.length > MAX_HISTORY * 2) {
-        history.shift();
-      }
+        } catch (err) {
+            console.error('Chat error:', err.message);
+            res.status(500).json({ error: err.message });
+        }
+    });
 
-      const response = await client.messages.create({
-        model: 'claude-haiku-4-5',
-        max_tokens: 250,
-        system: SANTOSH_SYSTEM_PROMPT,
-        messages: history
-      });
+    // POST /analyst-debrief/:id — auto post-trade analysis
+    app.post('/analyst-debrief/:id', async (req, res) => {
+        try {
+            const DB = process.env.DB_PATH || path.join(__dirname, 'trades.json');
+            const db = JSON.parse(fs.readFileSync(DB, 'utf8'));
+            const trade = db.trades.find(t => t.id === parseInt(req.params.id));
 
-      const reply = response.content[0].text;
+            if (!trade) return res.status(404).json({ error: 'Trade not found' });
+            if (trade.status !== 'closed') return res.status(400).json({ error: 'Trade not closed yet' });
 
-      // Add assistant reply to history
-      history.push({ role: 'assistant', content: reply });
+            const prompt = buildPostTradePrompt(trade, latestMarketData);
+            const response = await client.messages.create({
+                model: 'claude-haiku-4-5',
+                max_tokens: 300,
+                system: SANTOSH_SYSTEM,
+                messages: [{ role: 'user', content: prompt }]
+            });
 
-      res.json({ reply, timestamp: new Date().toISOString(), success: true });
+            const debrief = response.content[0].text;
 
-    } catch (err) {
-      console.error('Chat error:', err.message);
-      res.status(500).json({ error: err.message });
-    }
-  });
+            // Save to trade record
+            const idx = db.trades.findIndex(t => t.id === parseInt(req.params.id));
+            db.trades[idx].santosh_debrief = debrief;
+            db.trades[idx].debrief_time = Date.now();
+            fs.writeFileSync(DB, JSON.stringify(db, null, 2));
 
-  // GET /analyst-chat — serves the chat panel HTML
-  app.get('/analyst-chat', (req, res) => {
-    res.sendFile('analyst.html', { root: './public' });
-  });
+            // Add to feed
+            addToFeed({
+                commentary: `📋 DEBRIEF: ${debrief}`,
+                price: latestMarketData?.price,
+                event_type: 'debrief',
+                timestamp: new Date().toISOString()
+            });
 
-  console.log('✅ Santosh analyst endpoints loaded: /analyst, /analyst-feed, /analyst-chat');
+            res.json({ debrief, success: true });
+
+        } catch (err) {
+            console.error('Debrief error:', err.message);
+            res.status(500).json({ error: err.message });
+        }
+    });
+
+    // GET /analyst-chat — serves the panel
+    app.get('/analyst-chat', (req, res) => {
+        res.sendFile('analyst.html', { root: './public' });
+    });
+
+    console.log('✅ Santosh v2 loaded: /analyst /analyst-feed /analyst-chat /analyst-debrief/:id');
 };
