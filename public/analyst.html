@@ -341,6 +341,15 @@ body{background:var(--bg);color:var(--white);font-family:var(--sans);height:100v
 #send-btn:hover{opacity:.85}
 #send-btn:disabled{opacity:.4;cursor:not-allowed}
 
+/* LEVELS CARD */
+.card-levels{border-left:3px solid var(--amber);background:linear-gradient(135deg,rgba(245,158,11,.06) 0%,var(--surface) 60%)}
+.levels-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;padding:8px 12px 10px}
+.level-item{display:flex;flex-direction:column;gap:2px}
+.level-lbl{font-size:9px;font-family:var(--mono);color:var(--muted);text-transform:uppercase;letter-spacing:1px}
+.level-val{font-size:12px;font-family:var(--mono);font-weight:600}
+.lv-high{color:var(--green)}.lv-low{color:var(--red)}.lv-neutral{color:var(--amber)}
+.near-alert{margin:0 12px 10px;padding:6px 10px;background:rgba(245,158,11,.08);border:1px solid rgba(245,158,11,.2);border-radius:3px;font-size:11px;font-family:var(--mono);color:var(--amber)}
+
 /* NEWS TICKER at very bottom */
 #news-ticker{
   height:28px;
@@ -476,6 +485,7 @@ function getCardConfig(eventType, bias) {
     dashboard_update: {tag:'DASHBOARD',tagCls:'tag-news',cardCls:'card card-signal',size:'sm'},
     debrief:          {tag:'DEBRIEF',tagCls:'tag-debrief',cardCls:'card card-warning',size:'md'},
     periodic:         {tag:'MARKET CHECK',tagCls:'tag-news',cardCls:'card card-neutral',size:'sm'},
+    levels_analysis:  {tag:'📊 KEY LEVELS',tagCls:'tag-choch',cardCls:'card card-levels',size:'levels'},
   };
   return map[eventType] || {tag:'UPDATE',tagCls:'tag-news',cardCls:'card card-neutral',size:'sm'};
 }
@@ -485,6 +495,45 @@ function buildCard(entry) {
   const cfg = getCardConfig(entry.event_type, entry.bias);
   const time = fmtTime(entry.timestamp);
   const price = entry.price ? '$' + Number(entry.price).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2}) : '';
+
+  if (cfg.size === 'levels') {
+    const div = document.createElement('div');
+    div.className = cfg.cardCls;
+    div.dataset.ts = entry.timestamp;
+    div.style.borderRadius = '6px';
+    div.style.overflow = 'hidden';
+    div.style.border = '1px solid rgba(245,158,11,.25)';
+
+    const nearHtml = entry.nearLevels && entry.nearLevels.length
+      ? `<div class="near-alert">⚠ Near key level: ${entry.nearLevels.join(' · ')}</div>` : '';
+
+    const eqHtml = [
+      ...(entry.equalHighs||[]).map(h=>`<div class="level-item"><span class="level-lbl">Equal High</span><span class="level-val lv-high">${h}</span></div>`),
+      ...(entry.equalLows||[]).map(l=>`<div class="level-item"><span class="level-lbl">Equal Low</span><span class="level-val lv-low">${l}</span></div>`),
+    ].join('');
+
+    const rangeHtml = entry.isRanging
+      ? `<div class="level-item"><span class="level-lbl">Range High</span><span class="level-val lv-high">${entry.rangeHigh}</span></div>
+         <div class="level-item"><span class="level-lbl">Range Low</span><span class="level-val lv-low">${entry.rangeLow}</span></div>` : '';
+
+    div.innerHTML = `
+      <div class="card-head">
+        <span class="tag ${cfg.tagCls}">${cfg.tag}</span>
+        <span class="card-price">${price}</span>
+        <span class="card-time">${time}</span>
+      </div>
+      <div class="card-body"><div class="card-text-sm">${entry.commentary}</div></div>
+      <div class="levels-grid">
+        <div class="level-item"><span class="level-lbl">72h High</span><span class="level-val lv-high">${entry.high72h||'—'}</span></div>
+        <div class="level-item"><span class="level-lbl">72h Low</span><span class="level-val lv-low">${entry.low72h||'—'}</span></div>
+        <div class="level-item"><span class="level-lbl">Week High</span><span class="level-val lv-neutral">${entry.weekHigh||'—'}</span></div>
+        <div class="level-item"><span class="level-lbl">Week Low</span><span class="level-val lv-neutral">${entry.weekLow||'—'}</span></div>
+        ${eqHtml}
+        ${rangeHtml}
+      </div>
+      ${nearHtml}`;
+    return div;
+  }
 
   if (cfg.size === 'sm') {
     // Small snapshot card
