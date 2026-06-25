@@ -540,31 +540,43 @@ async function pollFeed() {
 
 // ── POLL NEWS ─────────────────────────────────────────────────
 let lastNewsTs = 0;
+let newsLoaded = false;
+
 async function pollNews() {
   try {
     const res = await fetch('/api/intel');
     const data = await res.json();
     if (!data.items?.length) return;
 
-    // Only show new items since last check
-    const newItems = data.items.filter(item => {
-      const t = new Date(item.pubDate).getTime();
-      return t > lastNewsTs && item.score >= 3;
-    });
-
-    if (newItems.length) {
-      lastNewsTs = Math.max(...newItems.map(i => new Date(i.pubDate).getTime()));
-      // Add top 2 new items to feed
-      newItems.slice(0, 2).forEach(item => {
+    if (!newsLoaded) {
+      // First load — inject all items score 2+ into feed
+      newsLoaded = true;
+      lastNewsTs = Math.max(...data.items.map(i => new Date(i.pubDate||Date.now()).getTime()));
+      const toShow = data.items.filter(i => (i.score||1) >= 2).slice(0, 6);
+      // Inject in reverse so newest is at top
+      toShow.reverse().forEach(item => {
         const tweet = buildNewsTweet(item);
         prependFeed(tweet, 'news');
       });
+    } else {
+      // Subsequent polls — only new items
+      const newItems = data.items.filter(item => {
+        const t = new Date(item.pubDate||Date.now()).getTime();
+        return t > lastNewsTs && (item.score||1) >= 2;
+      });
+      if (newItems.length) {
+        lastNewsTs = Math.max(...newItems.map(i => new Date(i.pubDate||Date.now()).getTime()));
+        newItems.slice(0, 3).forEach(item => {
+          const tweet = buildNewsTweet(item);
+          prependFeed(tweet, 'news');
+        });
+      }
     }
 
     // Update ticker
-    const tickerText = data.items.slice(0,8).map(i => `${i.source}: ${i.headline}`).join('   ·   ');
+    const tickerText = data.items.slice(0,10).map(i => `${i.source}: ${i.headline}`).join('   ·   ');
     document.getElementById('ticker-inner').textContent = tickerText;
-  } catch(e) {}
+  } catch(e) { console.log('News error:', e.message); }
 }
 
 // ── CHAT ─────────────────────────────────────────────────────
