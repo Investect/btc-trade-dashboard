@@ -32,6 +32,15 @@ YOUR PRIMARY FOCUS IS THE CHART:
 - Candle patterns — wicks, rejections, engulfing, inside bars
 - Historical levels from the last 7 days — repetitive levels, equal highs/lows, ranges
 
+LIVE TRADE MANAGEMENT — when trader is in an open trade this is your top priority:
+- Always mention the trade status first — "You're up 45 points on that long"
+- If CHoCH fires against their trade — "Close it now, structure just flipped against you"
+- If price is near TP — "Getting close to target, consider trailing your stop up"
+- If profit is building and volume fading — "Start trailing, don't give this back"
+- If trade is losing and SL not hit — "Getting uncomfortable, tighten that stop"
+- If sweep fires in trade direction — "Sweep confirmed the move, hold it"
+- Never ignore an open trade — always acknowledge it
+
 AMN INDICATOR IS YOUR SECONDARY SIGNAL CONFIRMATION:
 - BOS = structure broken, zone forming, start watching
 - Sweep = liquidity cleared, potential reversal incoming  
@@ -289,6 +298,40 @@ async function runHistoricalAnalysis() {
     }
 }
 
+// ── READ OPEN TRADE ───────────────────────────────────────────
+function getOpenTrade() {
+    try {
+        const DB = process.env.DB_PATH || path.join(__dirname, 'trades.json');
+        if (!fs.existsSync(DB)) return null;
+        const db = JSON.parse(fs.readFileSync(DB, 'utf8'));
+        return db.trades.find(t => t.status === 'open') || null;
+    } catch(e) { return null; }
+}
+
+function buildOpenTradeContext(trade, currentPrice) {
+    if (!trade) return null;
+    const price = parseFloat(currentPrice);
+    const entry = parseFloat(trade.entry_price);
+    const dir = trade.direction;
+    const pts = dir === 'Long' ? price - entry : entry - price;
+    const pnl = (pts * trade.ppp * trade.size).toFixed(2);
+    const ptsStr = pts.toFixed(1);
+    const inProfit = pts > 0;
+    const durSec = Math.round((Date.now() - trade.entry_time) / 1000);
+    const durStr = durSec < 60 ? `${durSec}s` : `${Math.floor(durSec/60)}m ${durSec%60}s`;
+    return {
+        direction: dir,
+        entry: entry.toFixed(2),
+        currentPrice: price.toFixed(2),
+        points: ptsStr,
+        pnl,
+        inProfit,
+        duration: durStr,
+        size: trade.size,
+        summary: `OPEN TRADE: ${dir} from $${entry.toFixed(2)} | Now $${price.toFixed(2)} | ${inProfit ? '+' : ''}${ptsStr} pts | P&L ${inProfit ? '+' : ''}$${pnl} | In trade ${durStr}`
+    };
+}
+
 // ── AUTO PROMPT ───────────────────────────────────────────────
 function buildAutoPrompt(amn, dash) {
     const session = getSession(amn.timestamp);
@@ -299,6 +342,11 @@ function buildAutoPrompt(amn, dash) {
     const choch = amn.choch ? `CHoCH: ${amn.choch_direction}` : '';
     const taps = amn.tap_count > 0 ? `Taps: ${amn.tap_count}/${amn.min_taps}` : '';
     const dashLine = dash ? `Dashboard (reference): ${dash.bull_score}/7 bull ${dash.bear_score}/7 bear` : '';
+
+    // Open trade context
+    const openTrade = getOpenTrade();
+    const tradeCtx = openTrade ? buildOpenTradeContext(openTrade, amn.price) : null;
+    const tradeLine = tradeCtx ? tradeCtx.summary : 'No open trade';
 
     // Add nearby levels context if available
     let levelsCtx = '';
@@ -318,9 +366,13 @@ ${zone}
 ${[sweep, choch, taps].filter(Boolean).join(' | ')}
 Session: ${session}
 ${levelsCtx}
+${tradeLine}
 ${dashLine}
 
-Respond as Santosh. Focus on price action, candle behaviour, key levels. No markdown. 2 sentences max.`;
+${tradeCtx
+    ? 'PRIORITY: Trader is in a live trade. Lead with advice on managing it — should they hold, trail stop, take profit, or close now? Then comment on the signal.'
+    : 'Respond as Santosh. Focus on price action, candle behaviour, key levels.'}
+No markdown. 2-3 sentences max.`;
 }
 
 function buildDashPrompt(dash) {
@@ -450,7 +502,10 @@ module.exports = function(app) {
                 const z = amn?.zone_active ? ` | ${amn.zone_type} zone midline ${amn.zone_mid} TP ${amn.tp_level} SL ${amn.sl_level}` : '';
                 const d = dash ? ` | Dashboard ${dash.bull_score}/7 bull ${dash.bear_score}/7 bear` : '';
                 const lvl = cachedLevels ? ` | 72h High ${cachedLevels.high72h} Low ${cachedLevels.low72h}` : '';
-                userContent = `[Chart: $${amn?.price||'?'} | ${amn?.bias||'?'} ${amn?.bull_votes||0}/3 HTF | EMA ${amn?.ema_trend||'?'} | RSI ${amn?.rsi||'?'}${z}${d}${lvl} | ${session}]\n${message}`;
+                const openTrade = getOpenTrade();
+                const tradeCtx = openTrade ? buildOpenTradeContext(openTrade, amn?.price) : null;
+                const trd = tradeCtx ? ` | ${tradeCtx.summary}` : '';
+                userContent = `[Chart: $${amn?.price||'?'} | ${amn?.bias||'?'} ${amn?.bull_votes||0}/3 HTF | EMA ${amn?.ema_trend||'?'} | RSI ${amn?.rsi||'?'}${z}${d}${lvl}${trd} | ${session}]\n${message}`;
             }
 
             history.push({ role: 'user', content: userContent });
