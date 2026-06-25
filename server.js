@@ -548,8 +548,10 @@ app.get('/api/ob/trades', async (req, res) => {
 });
 
 app.get('/api/ob/klines', async (req, res) => {
-  const interval = ['1m','5m','15m'].includes(req.query.interval) ? req.query.interval : '5m';
-  const limit = interval === '1m' ? 80 : 80;
+  const validIntervals = ['1m','5m','15m','1h','4h','1d'];
+  const interval = validIntervals.includes(req.query.interval) ? req.query.interval : '5m';
+  const defaultLimits = { '1m':80, '5m':80, '15m':80, '1h':168, '4h':84, '1d':30 };
+  const limit = req.query.limit ? Math.min(parseInt(req.query.limit)||80, 500) : defaultLimits[interval];
   const urls = [
     `https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval=${interval}&limit=${limit}`,
     `https://api1.binance.com/api/v3/klines?symbol=BTCUSDT&interval=${interval}&limit=${limit}`,
@@ -557,7 +559,7 @@ app.get('/api/ob/klines', async (req, res) => {
   ];
   for (const url of urls) {
     try {
-      const r = await fetch(url, { signal: AbortSignal.timeout(5000) });
+      const r = await fetch(url, { signal: AbortSignal.timeout(8000) });
       if (!r.ok) continue;
       const d = await r.json();
       if (Array.isArray(d) && d.length > 0) return res.json({ candles: d });
