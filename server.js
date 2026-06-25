@@ -21,6 +21,9 @@ app.use(express.json());
 app.use(express.text({ type: 'text/*' }));
 app.use(express.static(path.join(__dirname, 'public')));
 
+// ─── SANTOSH ANALYST ─────────────────────────────────────────────────────────
+require('./analyst')(app);
+
 // ─── WEBHOOK ─────────────────────────────────────────────────────────────────
 app.post('/webhook', (req, res) => {
   try {
@@ -506,9 +509,7 @@ app.get('/api/analyse/:id', (req, res) => {
 // ─── ORDER BOOK PANEL ────────────────────────────────────────────────────────
 app.get('/orderbook', (req, res) => res.sendFile(path.join(__dirname, 'public', 'orderbook.html')));
 
-// ─── BINANCE PROXY ROUTES (bypasses browser WebSocket restrictions) ───────────
-// The browser polls these endpoints; the server fetches from Binance and returns JSON
-
+// ─── BINANCE PROXY ROUTES ────────────────────────────────────────────────────
 app.get('/api/ob/book', async (req, res) => {
   try {
     const r = await fetch('https://fapi.binance.com/fapi/v1/depth?symbol=BTCUSDT&limit=20', {
@@ -565,9 +566,7 @@ app.get('/api/ob/klines', async (req, res) => {
   res.status(500).json({ error: 'All kline sources failed' });
 });
 
-// ─── KEEP-ALIVE — self-ping every 4 mins so Render never spins down ─────────
-// Render free tier spins down after 15 mins of no INCOMING requests.
-// Pinging our own /health endpoint counts as an incoming request — keeps it live.
+// ─── KEEP-ALIVE ──────────────────────────────────────────────────────────────
 const SELF_URL = process.env.RENDER_EXTERNAL_URL || `http://localhost:${process.env.PORT || 3000}`;
 setInterval(async () => {
   try {
@@ -576,12 +575,11 @@ setInterval(async () => {
   } catch(e) {
     console.log('[keep-alive] ping failed:', e.message);
   }
-}, 4 * 60 * 1000); // every 4 minutes
+}, 4 * 60 * 1000);
 
 // ─── START ───────────────────────────────────────────────────────────────────
 app.listen(PORT, () => {
   console.log(`BTC Trade Dashboard → http://localhost:${PORT}`);
-  // Warm up immediately on start
   setTimeout(async () => {
     try { await fetch(`${SELF_URL}/health`, { signal: AbortSignal.timeout(5000) }); } catch(e) {}
   }, 3000);
