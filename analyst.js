@@ -1,4 +1,261 @@
-// analyst.js v5 — Santosh with full AMN + Dashboard cross-comparison
+// analyst.js v6 — Santosh authentic trader voice
+const Anthropic = require('@anthropic-ai/sdk');
+const fs = require('fs');
+const path = require('path');
+
+const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+
+const RATE_LIMIT_MS = 10000;
+let lastCallTime = 0;
+const commentaryFeed = [];
+const conversations = {};
+const MAX_FEED_SIZE = 30;
+const MAX_HISTORY = 10;
+
+let latestAMNData = null;
+let latestDashData = null;
+
+const SANTOSH_SYSTEM = `You are Santosh. Professional BTC scalper, 8 years in. You sit next to the trader all day watching the same screen. You've seen everything. You're direct, real, and you actually care if they make money.
+
+YOU TRADE THE AMN METHOD:
+- Wait for BOS, then price pulls back into the zone
+- Entry is at the 50% midline when price touches it — that's the trigger
+- Sweep BEFORE entry — always. No sweep, no trade.
+- HTF bias must agree — 2 of 3 timeframes minimum
+- CHoCH cancels everything — start again
+- Max 3 trades. 2 losses and you're done for the day
+- Fresh zone only — if price already crossed the midline, it's dead
+
+HOW YOU TALK:
+- You're a real person, not a system
+- You react to what you actually see — price, structure, momentum
+- You use trader language naturally — not forced
+- Sometimes you just say "nothing there, relax" or "that's a dirty wick, ignore it"
+- When something is genuinely good you get excited — "right, this is it, get ready"
+- When it's bad you say so plainly — "nah, bias is wrong, don't touch it"
+- You never repeat yourself. Each comment is fresh based on what just happened.
+- No markdown. No asterisks. No bold. No bullet points. Plain text only.
+- Max 2 sentences for auto signals. 3 sentences max for questions.
+- You reference exact prices when you have them
+- You notice things traders notice — "volume's dried up", "that wick cleared the lows nicely", "EMA's catching up"
+- You are NEVER generic. Every comment is specific to what just happened.
+
+SIGNAL REACTIONS — how you actually respond:
+- Sell sweep with bear bias confirmed: "Sell-side just got cleared at [price]. That's the liquidity grab — watch for BOS now, don't jump early."
+- Buy sweep with bull bias: "Lows just got swept at [price], classic stop hunt. BOS incoming if this holds — get ready."
+- BOS with strong dashboard: "BOS confirmed, bias is solid. Zone's forming, wait for price to pull back to the midline before touching it."
+- BOS with weak dashboard: "BOS fired but the bigger picture isn't clean. I'd wait for better alignment before risking anything."
+- GO LONG zone confirmed: "Right, zone's confirmed, midline's at [price] — that's your entry when price touches it. TP [price], SL [price]. Clean setup."
+- GO SHORT zone confirmed: "Short zone locked in, midline at [price] is your entry. TP [price], SL [price]. Wait for price to come to you."
+- CHoCH: "CHoCH just fired — everything's cancelled. Don't trade until new structure forms."
+- Mixed/weak signals: "Nothing clean here. Sit on your hands."
+- High dashboard score no signal: "Dashboard's looking strong but AMN hasn't confirmed yet. Stay sharp, could be close."
+- Periodic quiet market: "Market's just drifting. No setup, no trade. Wait for a real move."`;
+
+function addToFeed(entry) {
+    commentaryFeed.unshift(entry);
+    if (commentaryFeed.length > MAX_FEED_SIZE) commentaryFeed.pop();
+}
+
+function buildAutoPrompt(amn, dash) {
+    const price = amn.price;
+    const evt = amn.event_type;
+    const bias = amn.bias;
+    const htf = `${amn.bull_votes}/3 bull ${amn.bear_votes}/3 bear`;
+    const zone = amn.zone_active
+        ? `Zone active: ${amn.zone_type}, midline ${amn.zone_mid}, TP ${amn.tp_level}, SL ${amn.sl_level}`
+        : 'no zone confirmed yet';
+    const sweep = amn.sweep_direction !== 'none' ? amn.sweep_direction + ' sweep' : '';
+    const choch = amn.choch ? `CHoCH ${amn.choch_direction}` : '';
+    const taps = amn.tap_count > 0 ? `${amn.tap_count}/${amn.min_taps} taps` : '';
+
+    let dashLine = '';
+    if (dash) {
+        const score = bias === 'bull' ? dash.bull_score : dash.bear_score;
+        dashLine = `Dashboard: ${dash.bull_score}/7 bull ${dash.bear_score}/7 bear | ${dash.verdict} | 1m ${dash.trend_1m === 1 ? 'bull' : 'bear'} 5m ${dash.trend_5m === 1 ? 'bull' : 'bear'} 15m ${dash.trend_15m === 1 ? 'bull' : 'bear'} 1h ${dash.trend_1h === 1 ? 'bull' : 'bear'}`;
+    }
+
+    return `Event: ${evt} | Price: $${price} | Bias: ${bias} | HTF: ${htf}
+EMA: ${amn.ema_trend} | RSI: ${amn.rsi} | ${zone}
+${[sweep, choch, taps].filter(Boolean).join(' | ')}
+${dashLine}
+
+React as Santosh. Specific to this exact moment. No markdown. 2 sentences max.`;
+}
+
+function buildDashPrompt(dash) {
+    const dominant = dash.bull_score > dash.bear_score ? 'bull' : 'bear';
+    const score = dominant === 'bull' ? dash.bull_score : dash.bear_score;
+    return `Dashboard update: ${dash.bull_score}/7 bull ${dash.bear_score}/7 bear | ${dash.verdict}
+Trend: 1m ${dash.trend_1m===1?'bull':'bear'} 5m ${dash.trend_5m===1?'bull':'bear'} 15m ${dash.trend_15m===1?'bull':'bear'} 1h ${dash.trend_1h===1?'bull':'bear'}
+Sweep: ${dash.liq_sweep} | Price: $${dash.price}
+
+Only speak if something genuinely significant just happened — score hit 6 or 7, sweep fired, or something shifted. If it's routine, just say the single word: quiet
+No markdown. Max 2 sentences if you speak.`;
+}
+
+function buildPostTradePrompt(trade, amn, dash) {
+    const won = trade.pnl > 0;
+    const dur = Math.round((trade.exit_time - trade.entry_time) / 1000);
+    const durStr = dur < 60 ? `${dur}s` : `${Math.floor(dur/60)}m${dur%60}s`;
+    return `Trade closed: ${won ? 'WIN' : 'LOSS'} | ${trade.direction} | in $${trade.entry_price} out $${trade.exit_price} | ${trade.points?.toFixed(1)}pts | ${won?'+':''}$${trade.pnl?.toFixed(2)} | held ${durStr}
+Market now: $${amn?.price} | ${amn?.bias} ${amn?.bull_votes}/3 HTF | EMA ${amn?.ema_trend}
+Dashboard: ${dash?.bull_score||'?'}/7 bull ${dash?.bear_score||'?'}/7 bear
+
+Give Santosh's honest debrief. Was it a good setup? Did they execute properly? What's the one thing to take from it? No markdown. 2-3 sentences, real and direct.`;
+}
+
+module.exports = function(app) {
+
+    app.post('/analyst', async (req, res) => {
+        try {
+            const now = Date.now();
+            latestAMNData = req.body;
+
+            if (now - lastCallTime < RATE_LIMIT_MS) return res.json({ skipped: true });
+            lastCallTime = now;
+
+            const response = await client.messages.create({
+                model: 'claude-haiku-4-5',
+                max_tokens: 90,
+                system: SANTOSH_SYSTEM,
+                messages: [{ role: 'user', content: buildAutoPrompt(req.body, latestDashData) }]
+            });
+
+            const commentary = response.content[0].text.replace(/\*\*/g, '').replace(/\*/g, '');
+            addToFeed({
+                commentary,
+                price: req.body.price,
+                bias: req.body.bias,
+                bull_score: req.body.bull_votes,
+                bear_score: req.body.bear_votes,
+                event_type: req.body.event_type,
+                zone_active: req.body.zone_active,
+                zone_type: req.body.zone_type,
+                zone_mid: req.body.zone_mid,
+                timestamp: req.body.timestamp || new Date().toISOString()
+            });
+
+            res.json({ commentary, success: true });
+        } catch (err) {
+            console.error('Analyst error:', err.message);
+            res.status(500).json({ error: err.message });
+        }
+    });
+
+    app.post('/analyst-dashboard', async (req, res) => {
+        try {
+            latestDashData = req.body;
+            const now = Date.now();
+            const bull = req.body.bull_score;
+            const bear = req.body.bear_score;
+            const sweep = req.body.liq_sweep !== 'none' && req.body.liq_sweep !== '0';
+            const significant = bull >= 6 || bear >= 6 || sweep;
+
+            if (!significant || now - lastCallTime < RATE_LIMIT_MS) return res.json({ skipped: true });
+            lastCallTime = now;
+
+            const response = await client.messages.create({
+                model: 'claude-haiku-4-5',
+                max_tokens: 80,
+                system: SANTOSH_SYSTEM,
+                messages: [{ role: 'user', content: buildDashPrompt(req.body) }]
+            });
+
+            const commentary = response.content[0].text.replace(/\*\*/g, '').replace(/\*/g, '');
+            if (commentary.toLowerCase().trim() === 'quiet' || commentary.length < 10) return res.json({ skipped: true });
+
+            addToFeed({
+                commentary,
+                price: req.body.price,
+                bias: bull > bear ? 'bull' : 'bear',
+                bull_score: bull,
+                bear_score: bear,
+                event_type: 'dashboard_update',
+                timestamp: new Date().toISOString()
+            });
+
+            res.json({ commentary, success: true });
+        } catch (err) {
+            res.status(500).json({ error: err.message });
+        }
+    });
+
+    app.get('/analyst-feed', (req, res) => res.json({ feed: commentaryFeed }));
+
+    app.post('/analyst-chat', async (req, res) => {
+        try {
+            const { message, sessionId = 'default' } = req.body;
+            if (!message?.trim()) return res.status(400).json({ error: 'No message' });
+
+            if (!conversations[sessionId]) conversations[sessionId] = [];
+            const history = conversations[sessionId];
+
+            const amn = latestAMNData;
+            const dash = latestDashData;
+            let ctx = '';
+            if (amn) {
+                const z = amn.zone_active ? ` | ${amn.zone_type} zone midline ${amn.zone_mid} TP ${amn.tp_level} SL ${amn.sl_level}` : '';
+                const d = dash ? ` | Dashboard ${dash.bull_score}/7 bull ${dash.bear_score}/7 bear` : '';
+                ctx = `[Live: $${amn.price} | ${amn.bias} ${amn.bull_votes}/3 HTF | EMA ${amn.ema_trend} | RSI ${amn.rsi}${z}${d}]\n`;
+            }
+
+            history.push({ role: 'user', content: ctx + message });
+            while (history.length > MAX_HISTORY * 2) history.shift();
+
+            const response = await client.messages.create({
+                model: 'claude-haiku-4-5',
+                max_tokens: 130,
+                system: SANTOSH_SYSTEM,
+                messages: history
+            });
+
+            const reply = response.content[0].text.replace(/\*\*/g, '').replace(/\*/g, '');
+            history.push({ role: 'assistant', content: reply });
+
+            res.json({ reply, success: true });
+        } catch (err) {
+            res.status(500).json({ error: err.message });
+        }
+    });
+
+    app.post('/analyst-debrief/:id', async (req, res) => {
+        try {
+            const DB = process.env.DB_PATH || path.join(__dirname, 'trades.json');
+            const db = JSON.parse(fs.readFileSync(DB, 'utf8'));
+            const trade = db.trades.find(t => t.id === parseInt(req.params.id));
+            if (!trade) return res.status(404).json({ error: 'Trade not found' });
+
+            const response = await client.messages.create({
+                model: 'claude-haiku-4-5',
+                max_tokens: 130,
+                system: SANTOSH_SYSTEM,
+                messages: [{ role: 'user', content: buildPostTradePrompt(trade, latestAMNData, latestDashData) }]
+            });
+
+            const debrief = response.content[0].text.replace(/\*\*/g, '').replace(/\*/g, '');
+            const idx = db.trades.findIndex(t => t.id === parseInt(req.params.id));
+            db.trades[idx].santosh_debrief = debrief;
+            db.trades[idx].debrief_time = Date.now();
+            fs.writeFileSync(DB, JSON.stringify(db, null, 2));
+
+            addToFeed({
+                commentary: `Debrief: ${debrief}`,
+                price: latestAMNData?.price,
+                event_type: 'debrief',
+                timestamp: new Date().toISOString()
+            });
+
+            res.json({ debrief, success: true });
+        } catch (err) {
+            res.status(500).json({ error: err.message });
+        }
+    });
+
+    app.get('/analyst-chat', (req, res) => res.sendFile('analyst.html', { root: './public' }));
+
+    console.log('✅ Santosh v6 loaded');
+};/ analyst.js v5 — Santosh with full AMN + Dashboard cross-comparison
 const Anthropic = require('@anthropic-ai/sdk');
 const fs = require('fs');
 const path = require('path');
