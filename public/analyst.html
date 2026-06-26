@@ -101,13 +101,42 @@ body{background:var(--bg);color:var(--white);font-family:var(--sans);display:fle
 .tstat-val{font-size:13px;font-family:var(--mono);font-weight:700;margin-top:2px}
 .tv-profit{color:var(--green)}.tv-loss{color:var(--red)}.tv-neutral{color:var(--amber)}
 
+/* [4] Candle pattern section */
+#pattern-section{border-bottom:1px solid var(--b1);flex-shrink:0}
+#pattern-inner{padding:10px 14px;display:flex;align-items:center;gap:12px}
+#pattern-svg-wrap{flex-shrink:0}
+#pattern-info{flex:1;min-width:0}
+#pattern-name{font-size:12px;font-weight:700;font-family:var(--mono)}
+#pattern-desc{font-size:10px;color:var(--grey);margin-top:2px;line-height:1.4}
+#pattern-empty{font-size:10px;color:var(--dim);font-family:var(--mono);padding:10px 14px}
+
+/* [2] Key levels ladder */
+#levels-ladder{padding:8px 14px;display:flex;flex-direction:column;gap:4px;background:var(--bg);max-height:130px;overflow-y:auto;flex-shrink:0}
+#levels-ladder::-webkit-scrollbar{width:2px}
+#levels-ladder::-webkit-scrollbar-thumb{background:var(--b2)}
+.level-row{display:flex;align-items:center;gap:8px;padding:3px 0;transition:background .1s}
+.level-row.closest{background:rgba(245,158,11,.05);border-radius:4px;padding:3px 6px;margin:0 -6px}
+.level-dist{font-size:9px;font-family:var(--mono);color:var(--dim);width:52px;text-align:right;flex-shrink:0}
+.level-bar-wrap{flex:1;height:2px;background:var(--b2);border-radius:1px;position:relative}
+.level-bar{height:100%;border-radius:1px;transition:width .4s}
+.lchip{font-size:10px;font-family:var(--mono);font-weight:600;padding:2px 8px;border-radius:10px;white-space:nowrap;flex-shrink:0}
+.lchip.closest-chip{box-shadow:0 0 6px currentColor;opacity:1}
+.lc-h{background:rgba(52,211,153,.08);color:var(--green);border:1px solid rgba(52,211,153,.2)}
+.lc-l{background:rgba(248,113,113,.08);color:var(--red);border:1px solid rgba(248,113,113,.2)}
+.lc-e{background:rgba(34,211,238,.08);color:var(--cyan);border:1px solid rgba(34,211,238,.2)}
+.lc-n{background:rgba(245,158,11,.08);color:var(--amber);border:1px solid rgba(245,158,11,.2)}
+#levels-empty{font-size:10px;color:var(--dim);font-family:var(--mono);padding:10px 14px}
+.level-arrow{font-size:9px;flex-shrink:0}
+
 /* Santosh live observations */
 #obs-feed{flex:1;overflow-y:auto;padding:0}
 #obs-feed::-webkit-scrollbar{width:2px}
 #obs-feed::-webkit-scrollbar-thumb{background:var(--b2)}
 
-.obs-item{padding:10px 14px;border-bottom:1px solid var(--b1);animation:fin .25s ease}
-.obs-header{display:flex;align-items:center;gap:8px;margin-bottom:5px}
+/* [3] Variable-format observation cards */
+.obs-item{padding:9px 14px;border-bottom:1px solid var(--b1);animation:fin .25s ease}
+.obs-item.obs-short{padding:7px 14px}
+.obs-header{display:flex;align-items:center;gap:8px;margin-bottom:4px}
 .obs-tag{font-size:9px;font-family:var(--mono);font-weight:600;padding:2px 7px;border-radius:10px;text-transform:uppercase;letter-spacing:.5px}
 .ot-signal{background:rgba(34,211,238,.1);color:var(--cyan);border:1px solid rgba(34,211,238,.2)}
 .ot-level{background:rgba(245,158,11,.1);color:var(--amber);border:1px solid rgba(245,158,11,.2)}
@@ -116,18 +145,10 @@ body{background:var(--bg);color:var(--white);font-family:var(--sans);display:fle
 .ot-warn{background:rgba(248,113,113,.1);color:var(--red);border:1px solid rgba(248,113,113,.2)}
 .obs-time{font-size:9px;font-family:var(--mono);color:var(--dim);margin-left:auto}
 .obs-text{font-size:12px;line-height:1.55;color:#e2e8f0}
+.obs-text.one-liner{font-size:11px;color:var(--grey)}
 .obs-price{font-size:11px;font-family:var(--mono);color:var(--amber);margin-top:3px}
 
-/* Key levels strip */
-#levels-strip{padding:8px 14px;display:flex;flex-wrap:wrap;gap:6px;background:var(--bg);border-bottom:1px solid var(--b1);flex-shrink:0}
-.lchip{font-size:10px;font-family:var(--mono);font-weight:600;padding:3px 9px;border-radius:10px}
-.lc-h{background:rgba(52,211,153,.08);color:var(--green);border:1px solid rgba(52,211,153,.2)}
-.lc-l{background:rgba(248,113,113,.08);color:var(--red);border:1px solid rgba(248,113,113,.2)}
-.lc-e{background:rgba(34,211,238,.08);color:var(--cyan);border:1px solid rgba(34,211,238,.2)}
-.lc-n{background:rgba(245,158,11,.08);color:var(--amber);border:1px solid rgba(245,158,11,.2)}
-#levels-empty{font-size:10px;color:var(--dim);font-family:var(--mono)}
-
-/* FEED CARDS — Twitter style */
+/* FEED CARDS */
 .tweet{padding:11px 14px;border-bottom:1px solid var(--b1);display:flex;gap:10px;transition:background .1s;cursor:default}
 .tweet:hover{background:rgba(255,255,255,.015)}
 @keyframes fin{from{opacity:0;transform:translateY(-4px)}to{opacity:1;transform:translateY(0)}}
@@ -155,11 +176,9 @@ body{background:var(--bg);color:var(--white);font-family:var(--sans);display:fle
 .tw-text{font-size:12px;line-height:1.6;color:#e2e8f0;word-break:break-word}
 .tw-text.sm{font-size:11px;color:var(--grey)}
 
-/* GO cards */
 .tw-go-long{background:linear-gradient(135deg,rgba(52,211,153,.05) 0%,transparent 70%);border-left:2px solid var(--green)}
 .tw-go-short{background:linear-gradient(135deg,rgba(248,113,113,.05) 0%,transparent 70%);border-left:2px solid var(--red)}
 
-/* Zone box */
 .zbox{display:flex;margin-top:7px;border:1px solid var(--b2);border-radius:5px;overflow:hidden}
 .zc{flex:1;padding:5px 8px;border-right:1px solid var(--b2)}
 .zc:last-child{border-right:none}
@@ -167,7 +186,7 @@ body{background:var(--bg);color:var(--white);font-family:var(--sans);display:fle
 .zc-v{font-size:12px;font-family:var(--mono);font-weight:700;margin-top:1px}
 .zc-e{color:var(--cyan)}.zc-t{color:var(--green)}.zc-s{color:var(--red)}
 
-/* Session banner */
+/* [1] Session banner */
 .sess-banner{padding:7px 14px;border-bottom:1px solid var(--b1);display:flex;align-items:center;gap:8px;background:var(--s1)}
 .sess-pill{font-size:9px;font-family:var(--mono);font-weight:600;padding:2px 8px;border-radius:10px;text-transform:uppercase;letter-spacing:.5px}
 .sp-ov{background:rgba(245,158,11,.1);color:var(--amber);border:1px solid rgba(245,158,11,.2)}
@@ -251,15 +270,28 @@ body{background:var(--bg);color:var(--white);font-family:var(--sans);display:fle
       </div>
     </div>
 
-    <!-- Key Levels -->
+    <!-- [4] Candle Pattern -->
+    <div class="c3-section" id="pattern-section">
+      <div class="c3-section-title">Candle Pattern (1m)</div>
+      <div id="pattern-inner" style="display:none">
+        <div id="pattern-svg-wrap"></div>
+        <div id="pattern-info">
+          <div id="pattern-name">—</div>
+          <div id="pattern-desc">—</div>
+        </div>
+      </div>
+      <div id="pattern-empty">Fetching candles...</div>
+    </div>
+
+    <!-- [2] Key Levels Ladder -->
     <div class="c3-section">
       <div class="c3-section-title">Key Levels</div>
-      <div id="levels-strip">
-        <span id="levels-empty" class="no-trade">Fetching historical levels...</span>
+      <div id="levels-ladder">
+        <span id="levels-empty" style="font-size:10px;color:var(--dim);font-family:var(--mono)">Fetching historical levels...</span>
       </div>
     </div>
 
-    <!-- Live Observations -->
+    <!-- Santosh Observations -->
     <div class="c3-section-title">Santosh Observations</div>
     <div id="obs-feed"></div>
   </div>
@@ -275,7 +307,6 @@ body{background:var(--bg);color:var(--white);font-family:var(--sans);display:fle
 <script>
 const SID = 'sess_' + Date.now();
 let lastFeedTs = null;
-let lastSession = '';
 let marketCtx = {};
 let isWaiting = false;
 let activeTab = 'all';
@@ -283,34 +314,10 @@ let allEvents = [];
 let newsLoaded = false;
 let lastNewsTs = 0;
 let cachedLevels = null;
+let currentPrice = null;
 
-// ── SESSION ────────────────────────────────────────────────────
-function getSession() {
-  const t = new Date().getUTCHours() + new Date().getUTCMinutes()/60;
-  if (t>=13&&t<16) return {label:'LON/NY OVERLAP',desc:'Highest volume — best setups',cls:'sp-ov',icon:'🔥'};
-  if (t>=7&&t<12)  return {label:'LONDON',desc:'Strong directional moves',cls:'sp-lo',icon:'🇬🇧'};
-  if (t>=12&&t<13) return {label:'PRE-NY',desc:'Volatility building',cls:'sp-ny',icon:'⚡'};
-  if (t>=16&&t<21) return {label:'NEW YORK',desc:'Good liquidity',cls:'sp-ny',icon:'🗽'};
-  if (t>=21&&t<23) return {label:'SESSION CLOSE',desc:'Volume dying — avoid entries',cls:'sp-as',icon:'📉'};
-  return {label:'ASIAN / DEAD ZONE',desc:'Low volume — no trading',cls:'sp-as',icon:'😴'};
-}
-function updateSession() {
-  const s = getSession();
-  document.getElementById('sesv').textContent = s.label;
-  if (s.label !== lastSession) {
-    lastSession = s.label;
-    // Session banner in feed
-    const d = document.createElement('div');
-    d.className = 'sess-banner';
-    d.dataset.cat = 'system';
-    d.innerHTML = `<span class="sess-pill ${s.cls}">${s.icon} ${s.label}</span><span class="sess-desc">${s.desc}</span><span style="font-size:9px;color:var(--dim);font-family:var(--mono);margin-left:auto">${new Date().toUTCString().slice(17,22)} UTC</span>`;
-    prependFeed(d, 'system');
-    // Observation in col3
-    addObs(`Session: ${s.label} — ${s.desc}`, 'level', null);
-  }
-}
-updateSession();
-setInterval(updateSession, 60000);
+// [1] Session handled server-side via feed events — no client session tracking needed
+// Top bar session label updated from feed events
 
 // ── TIME ───────────────────────────────────────────────────────
 function fmt(iso) {
@@ -324,6 +331,23 @@ function ago(iso) {
   if (d<3600) return Math.floor(d/60)+'m ago';
   return Math.floor(d/3600)+'h ago';
 }
+
+// [1] Keep topbar session label in sync (client-side fallback only)
+function getSessionLocal() {
+  const t = new Date().getUTCHours() + new Date().getUTCMinutes()/60;
+  if (t>=13&&t<16) return {label:'LON/NY OVERLAP',cls:'sp-ov'};
+  if (t>=7&&t<12)  return {label:'LONDON',cls:'sp-lo'};
+  if (t>=12&&t<13) return {label:'PRE-NY',cls:'sp-ny'};
+  if (t>=16&&t<21) return {label:'NEW YORK',cls:'sp-ny'};
+  if (t>=21&&t<23) return {label:'SESSION CLOSE',cls:'sp-as'};
+  return {label:'ASIAN',cls:'sp-as'};
+}
+function updateTopbarSession() {
+  const s = getSessionLocal();
+  document.getElementById('sesv').textContent = s.label;
+}
+updateTopbarSession();
+setInterval(updateTopbarSession, 60000);
 
 // ── SIGNAL CONFIG ──────────────────────────────────────────────
 function cfg(evt) {
@@ -340,6 +364,7 @@ function cfg(evt) {
     dashboard_update:{tag:'INTEL',       tc:'st-purple',name:'Santosh',   hd:'@santosh_btc', av:'av-s', cat:'signals', cx:''},
     levels_analysis: {tag:'📊 LEVELS',   tc:'st-amber', name:'Santosh',   hd:'@santosh_btc', av:'av-s', cat:'signals', cx:''},
     debrief:         {tag:'DEBRIEF',     tc:'st-amber', name:'Santosh',   hd:'@santosh_btc', av:'av-s', cat:'signals', cx:''},
+    trade:           {tag:'TRADE',       tc:'st-bull',  name:'Santosh',   hd:'@santosh_btc', av:'av-s', cat:'signals', cx:''},
     news:            {tag:'NEWS',        tc:'st-purple',name:'Crypto Wire',hd:'@cryptowire',  av:'av-n', cat:'news',    cx:''},
     whale:           {tag:'🐋 WHALE',    tc:'st-cyan',  name:'Whale Alert',hd:'@whalealert',  av:'av-w', cat:'news',    cx:''},
   };
@@ -378,6 +403,16 @@ function buildTweet(e) {
       <div class="tw-text">${e.commentary||''}</div>
       ${zoneHtml}
     </div>`;
+  return d;
+}
+
+// [1] Build session banner from server feed event
+function buildSessionBanner(e) {
+  const d = document.createElement('div');
+  d.className = 'sess-banner';
+  d.dataset.cat = 'system';
+  d.dataset.ts = e.timestamp;
+  d.innerHTML = `<span class="sess-pill ${e.session_cls}">${e.session_icon} ${e.session_label}</span><span class="sess-desc">${e.session_desc}</span><span style="font-size:9px;color:var(--dim);font-family:var(--mono);margin-left:auto">${fmt(e.timestamp)}</span>`;
   return d;
 }
 
@@ -428,19 +463,23 @@ function switchTab(tab, el) {
   if (!filtered.length) feed.innerHTML = `<div style="padding:30px 14px;text-align:center;color:var(--dim);font-size:11px;font-family:var(--mono)">No ${tab} events yet</div>`;
 }
 
-// ── COL3: OBSERVATIONS ─────────────────────────────────────────
+// ── COL3: OBSERVATIONS [3] — variable format ──────────────────
 function addObs(text, type, price) {
   const feed = document.getElementById('obs-feed');
   const tagMap = {signal:'ot-signal',level:'ot-level',news:'ot-news',trade:'ot-trade',warn:'ot-warn'};
   const labelMap = {signal:'Signal',level:'Level',news:'News',trade:'Trade',warn:'Warning'};
+
+  // Determine if this is a short one-liner (under ~60 chars, no full stops mid-text)
+  const isShort = text.length < 65;
+
   const d = document.createElement('div');
-  d.className = 'obs-item';
+  d.className = `obs-item${isShort?' obs-short':''}`;
   d.innerHTML = `
     <div class="obs-header">
       <span class="obs-tag ${tagMap[type]||'ot-signal'}">${labelMap[type]||'Update'}</span>
       <span class="obs-time">${new Date().toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'})}</span>
     </div>
-    <div class="obs-text">${text}</div>
+    <div class="obs-text${isShort?' one-liner':''}">${text}</div>
     ${price?`<div class="obs-price">$${Number(price).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})}</div>`:''}`;
   feed.insertBefore(d, feed.firstChild);
   while(feed.children.length>20) feed.removeChild(feed.lastChild);
@@ -470,19 +509,140 @@ function updateTradePanel(tradeData) {
     </div>`;
 }
 
-// ── COL3: LEVELS ───────────────────────────────────────────────
+// ── [2] COL3: KEY LEVELS LADDER ───────────────────────────────
 function updateLevels(levels) {
   if (!levels) return;
   cachedLevels = levels;
-  const strip = document.getElementById('levels-strip');
-  const chips = [];
-  if (levels.high72h) chips.push(`<span class="lchip lc-h">72h H: ${levels.high72h}</span>`);
-  if (levels.low72h)  chips.push(`<span class="lchip lc-l">72h L: ${levels.low72h}</span>`);
-  if (levels.weekHigh) chips.push(`<span class="lchip lc-n">WK H: ${levels.weekHigh}</span>`);
-  if (levels.weekLow)  chips.push(`<span class="lchip lc-n">WK L: ${levels.weekLow}</span>`);
-  if (levels.equalHighs?.length) levels.equalHighs.forEach(h=>chips.push(`<span class="lchip lc-e">EQ H: ${h}</span>`));
-  if (levels.equalLows?.length)  levels.equalLows.forEach(l=>chips.push(`<span class="lchip lc-e">EQ L: ${l}</span>`));
-  if (chips.length) strip.innerHTML = chips.join('');
+  renderLevelsLadder();
+}
+
+function renderLevelsLadder() {
+  if (!cachedLevels) return;
+  const price = currentPrice || parseFloat(cachedLevels.currentPrice) || 0;
+  const ladder = document.getElementById('levels-ladder');
+
+  // Build all level entries
+  const entries = [];
+  const { high72h, low72h, weekHigh, weekLow, equalHighs, equalLows } = cachedLevels;
+
+  if (high72h) entries.push({ label:`72h H: ${high72h}`, value: parseFloat(high72h), cls:'lc-h' });
+  if (low72h)  entries.push({ label:`72h L: ${low72h}`,  value: parseFloat(low72h),  cls:'lc-l' });
+  if (weekHigh) entries.push({ label:`WK H: ${weekHigh}`, value: parseFloat(weekHigh), cls:'lc-n' });
+  if (weekLow)  entries.push({ label:`WK L: ${weekLow}`,  value: parseFloat(weekLow),  cls:'lc-n' });
+  if (equalHighs?.length) equalHighs.forEach(h => entries.push({ label:`EQ H: ${h}`, value: parseFloat(h), cls:'lc-e' }));
+  if (equalLows?.length)  equalLows.forEach(l  => entries.push({ label:`EQ L: ${l}`, value: parseFloat(l), cls:'lc-l' }));
+
+  if (!entries.length) {
+    ladder.innerHTML = '<span id="levels-empty" style="font-size:10px;color:var(--dim);font-family:var(--mono)">No levels cached yet</span>';
+    return;
+  }
+
+  // Sort by distance to current price (ascending)
+  entries.sort((a, b) => Math.abs(a.value - price) - Math.abs(b.value - price));
+
+  // Max distance for bar scaling
+  const maxDist = Math.max(...entries.map(e => Math.abs(e.value - price))) || 1;
+
+  ladder.innerHTML = '';
+  entries.forEach((entry, i) => {
+    const dist = Math.abs(entry.value - price);
+    const distPts = dist.toFixed(0);
+    const barWidth = Math.max(4, Math.round((1 - dist / maxDist) * 100));
+    const isClosest = i === 0;
+    const isAbove = entry.value > price;
+    const arrow = isAbove ? '↑' : '↓';
+    const arrowCol = isAbove ? 'var(--green)' : 'var(--red)';
+    const barCol = entry.cls === 'lc-h' ? 'var(--green)'
+                 : entry.cls === 'lc-l' ? 'var(--red)'
+                 : entry.cls === 'lc-e' ? 'var(--cyan)'
+                 : 'var(--amber)';
+
+    const row = document.createElement('div');
+    row.className = `level-row${isClosest?' closest':''}`;
+    row.innerHTML = `
+      <span class="level-arrow" style="color:${arrowCol}">${arrow}</span>
+      <span class="lchip ${entry.cls}${isClosest?' closest-chip':''}">${entry.label}</span>
+      <div class="level-bar-wrap"><div class="level-bar" style="width:${barWidth}%;background:${barCol};opacity:${isClosest?1:0.4}"></div></div>
+      <span class="level-dist">${distPts}pt</span>`;
+    ladder.appendChild(row);
+  });
+}
+
+// ── [4] CANDLE PATTERN SKETCHES ───────────────────────────────
+function buildCandleSVG(candles, pattern) {
+  if (!candles || !candles.length) return '';
+  const W = 80, H = 48, PAD = 4;
+  const prices = candles.flatMap(c => [c.high, c.low]);
+  const minP = Math.min(...prices);
+  const maxP = Math.max(...prices);
+  const range = maxP - minP || 1;
+  const toY = p => PAD + (1 - (p - minP) / range) * (H - PAD * 2);
+
+  const cW = (W - PAD * 2) / candles.length;
+  const wickX = (i) => PAD + i * cW + cW / 2;
+
+  const isBull = c => c.close >= c.open;
+  const patType = pattern?.type || 'neutral';
+  const lastIdx = candles.length - 1;
+
+  let rects = '', wicks = '';
+  candles.forEach((c, i) => {
+    const bull = isBull(c);
+    const bodyTop = toY(Math.max(c.open, c.close));
+    const bodyBot = toY(Math.min(c.open, c.close));
+    const bodyH = Math.max(1, bodyBot - bodyTop);
+    const bX = PAD + i * cW + cW * 0.15;
+    const bW = cW * 0.7;
+    const wx = wickX(i);
+    const isLast = i === lastIdx;
+
+    // Colors: last candle highlighted by pattern type, rest dimmed
+    let fill, stroke;
+    if (isLast) {
+      fill = patType === 'bull' ? '#34d399' : patType === 'bear' ? '#f87171' : '#f59e0b';
+      stroke = fill;
+    } else {
+      fill = bull ? 'rgba(52,211,153,0.35)' : 'rgba(248,113,113,0.35)';
+      stroke = bull ? 'rgba(52,211,153,0.6)' : 'rgba(248,113,113,0.6)';
+    }
+
+    wicks += `<line x1="${wx}" y1="${toY(c.high)}" x2="${wx}" y2="${toY(c.low)}" stroke="${stroke}" stroke-width="1"/>`;
+    rects += `<rect x="${bX}" y="${bodyTop}" width="${bW}" height="${bodyH}" fill="${fill}" rx="0.5"/>`;
+  });
+
+  return `<svg viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" xmlns="http://www.w3.org/2000/svg" style="display:block">
+    <rect width="${W}" height="${H}" fill="#0d1117" rx="3"/>
+    ${wicks}${rects}
+  </svg>`;
+}
+
+async function pollCandles() {
+  try {
+    const res = await fetch('/analyst-candles');
+    const data = await res.json();
+    const inner = document.getElementById('pattern-inner');
+    const empty = document.getElementById('pattern-empty');
+
+    if (!data.candles?.length) return;
+
+    const svgHtml = buildCandleSVG(data.candles, data.pattern);
+    document.getElementById('pattern-svg-wrap').innerHTML = svgHtml;
+
+    if (data.pattern) {
+      const col = data.pattern.type === 'bull' ? 'var(--green)'
+                : data.pattern.type === 'bear' ? 'var(--red)'
+                : 'var(--amber)';
+      document.getElementById('pattern-name').textContent = data.pattern.name;
+      document.getElementById('pattern-name').style.color = col;
+      document.getElementById('pattern-desc').textContent = data.pattern.desc;
+    } else {
+      document.getElementById('pattern-name').textContent = 'No pattern';
+      document.getElementById('pattern-desc').textContent = 'Standard candle forming';
+    }
+
+    inner.style.display = 'flex';
+    empty.style.display = 'none';
+  } catch(e) {}
 }
 
 // ── POLL ANALYST FEED ──────────────────────────────────────────
@@ -493,9 +653,10 @@ async function pollFeed() {
     if (!data.feed?.length) return;
     const latest = data.feed[0];
 
-    // Header
+    // Header update
     if (latest.price) {
       marketCtx = latest;
+      currentPrice = parseFloat(latest.price);
       document.getElementById('pv').textContent = '$'+Number(latest.price).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2});
       const bEl = document.getElementById('bv');
       bEl.textContent = (latest.bias||'—').toUpperCase();
@@ -504,22 +665,36 @@ async function pollFeed() {
       document.getElementById('sv').textContent = (sc||'—')+'/5';
       document.getElementById('evv').textContent = (latest.event_type||'').replace(/_/g,' ').toUpperCase();
       document.getElementById('pip').style.background = 'var(--green)';
+      // Re-render levels with updated price
+      renderLevelsLadder();
     }
 
     if (latest.timestamp !== lastFeedTs) {
       lastFeedTs = latest.timestamp;
-      // Add to feed col1
+
+      // [1] Session banner event — render as banner, NOT as obs
+      if (latest.event_type === 'session_banner') {
+        prependFeed(buildSessionBanner(latest), 'system');
+        // Update topbar
+        document.getElementById('sesv').textContent = latest.session_label;
+        return;
+      }
+
+      // Regular signal tweet
       const tweet = buildTweet(latest);
       const c = cfg(latest.event_type);
       prependFeed(tweet, c.cat);
-      // Add to col3 observations
+
+      // [3] Obs — only signal/level events, NOT session banners
       if (latest.commentary) addObs(latest.commentary, 'signal', latest.price);
-      // Update levels if present
-      if (latest.event_type==='levels_analysis') {
+
+      // Levels
+      if (latest.event_type === 'levels_analysis') {
         updateLevels({
-          high72h:latest.high72h, low72h:latest.low72h,
-          weekHigh:latest.weekHigh, weekLow:latest.weekLow,
-          equalHighs:latest.equalHighs, equalLows:latest.equalLows
+          high72h: latest.high72h, low72h: latest.low72h,
+          weekHigh: latest.weekHigh, weekLow: latest.weekLow,
+          equalHighs: latest.equalHighs, equalLows: latest.equalLows,
+          currentPrice: latest.price
         });
       }
     }
@@ -533,7 +708,7 @@ async function pollLevels() {
   try {
     const res = await fetch('/analyst-levels');
     const data = await res.json();
-    if (data.levels) updateLevels(data.levels);
+    if (data.levels) updateLevels({...data.levels, currentPrice: data.levels.currentPrice});
   } catch(e) {}
 }
 
@@ -544,10 +719,9 @@ async function pollTrade() {
     const data = await res.json();
     if (data.open) {
       const t = data.open;
-      // Use live price from market context if available, else fall back to entry
-      const price = parseFloat(marketCtx.price) || parseFloat(t.entry_price);
+      const price = currentPrice || parseFloat(t.entry_price);
       const pts = t.direction==='Long' ? price-t.entry_price : t.entry_price-price;
-      const pnl = (pts*t.ppp*t.size).toFixed(2);
+      const pnl = (pts*(t.ppp||1)*(t.size||1)).toFixed(2);
       const dur = Math.round((Date.now()-t.entry_time)/1000);
       const durStr = dur<60?dur+'s':Math.floor(dur/60)+'m '+dur%60+'s';
       updateTradePanel({
@@ -575,7 +749,6 @@ async function pollNews() {
     if (!newsLoaded) {
       newsLoaded = true;
       lastNewsTs = Math.max(...data.items.map(i=>new Date(i.pubDate||Date.now()).getTime()));
-      // Load all score 2+ on startup
       const toShow = data.items.filter(i=>(i.score||1)>=2).slice(0,8);
       toShow.reverse().forEach(item=>{
         prependFeed(buildNewsTweet(item), 'news');
@@ -594,7 +767,6 @@ async function pollNews() {
         });
       }
     }
-    // Ticker
     document.getElementById('tick-inner').textContent =
       data.items.slice(0,10).map(i=>`${i.source}: ${i.headline}`).join('   ·   ');
   } catch(e){}
@@ -643,10 +815,12 @@ pollFeed();
 pollNews();
 pollLevels();
 pollTrade();
+pollCandles();
 setInterval(pollFeed, 3000);
 setInterval(pollNews, 30000);
 setInterval(pollTrade, 3000);
 setInterval(pollLevels, 5*60*1000);
+setInterval(pollCandles, 15000); // [4] refresh candle sketch every 15s
 </script>
 </body>
 </html>
