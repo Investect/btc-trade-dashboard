@@ -715,25 +715,31 @@ async function pollLevels() {
 // ── POLL TRADE ─────────────────────────────────────────────────
 async function pollTrade() {
   try {
-    // Fetch trade status and live price in parallel
-    const [tradeRes, priceRes] = await Promise.allSettled([
+    // Fetch trade status and live BB bid/ask in parallel
+    const [tradeRes, bbRes] = await Promise.allSettled([
       fetch('/api/trades'),
-      fetch('https://api.binance.com/api/v3/ticker/price?symbol=BTCUSDT')
+      fetch('/analyst-bb-price')
     ]);
-    if (priceRes.status === 'fulfilled') {
+    let bbBid = null, bbAsk = null;
+    if (bbRes.status === 'fulfilled') {
       try {
-        const pd = await priceRes.value.json();
-        if (pd.price) {
-          currentPrice = parseFloat(pd.price);
-          document.getElementById('pv').textContent = '$'+currentPrice.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2});
-        }
+        const bd = await bbRes.value.json();
+        if (bd.bid && bd.ask) { bbBid = bd.bid; bbAsk = bd.ask; }
       } catch(e) {}
     }
     if (tradeRes.status !== 'fulfilled') return;
     const data = await tradeRes.value.json();
     if (data.open) {
       const t = data.open;
-      const price = currentPrice || parseFloat(t.entry_price);
+      // Use correct side: Short uses ask (what you'd close at), Long uses bid
+      const bbPrice = t.direction === 'Short' ? bbAsk : bbBid;
+      const price = bbPrice || currentPrice || parseFloat(t.entry_price);
+      // Update topbar with mid price
+      if (bbBid && bbAsk) {
+        const mid = (bbBid + bbAsk) / 2;
+        currentPrice = mid;
+        document.getElementById('pv').textContent = '$'+mid.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2});
+      }
       const pts = t.direction==='Long' ? price-t.entry_price : t.entry_price-price;
       const pnl = (pts*(t.ppp||1)*(t.size||1)).toFixed(2);
       const dur = Math.round((Date.now()-t.entry_time)/1000);
