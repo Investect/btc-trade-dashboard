@@ -1,826 +1,735 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Santosh — Live BTC Intelligence</title>
-<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-<style>
-*{margin:0;padding:0;box-sizing:border-box}
-:root{
-  --bg:#050709;
-  --s1:#090c11;
-  --s2:#0d1117;
-  --b1:#161c26;
-  --b2:#1e2738;
-  --amber:#f59e0b;
-  --amber2:#fbbf24;
-  --cyan:#22d3ee;
-  --green:#34d399;
-  --red:#f87171;
-  --purple:#a78bfa;
-  --white:#f1f5f9;
-  --grey:#94a3b8;
-  --dim:#475569;
-  --mono:'IBM Plex Mono',monospace;
-  --sans:'Inter',sans-serif;
-}
-html,body{height:100%;overflow:hidden}
-body{background:var(--bg);color:var(--white);font-family:var(--sans);display:flex;flex-direction:column}
+// analyst.js v9 — Santosh
+// Changes from v8:
+//   [1] Session banner fires once per session change, never repeated in auto commentary
+//   [3] Prompt instructs Santosh to vary observation length (1-liner vs short bullets)
+//   [5] /analyst-register-trade endpoint for Chrome extension auto-registration
+const Anthropic = require('@anthropic-ai/sdk');
+const fs = require('fs');
+const path = require('path');
 
-/* TOP BAR */
-#topbar{
-  height:44px;background:rgba(5,7,9,.98);border-bottom:1px solid var(--b1);
-  display:flex;align-items:center;padding:0 14px;gap:0;flex-shrink:0;
-}
-#brand{font-family:var(--mono);font-size:13px;font-weight:600;color:var(--amber);letter-spacing:3px;margin-right:20px}
-.ts{display:flex;flex-direction:column;padding:0 14px;border-right:1px solid var(--b1);height:44px;justify-content:center}
-.ts:first-of-type{border-left:1px solid var(--b1)}
-.tl{font-size:8px;color:var(--dim);text-transform:uppercase;letter-spacing:1px;font-family:var(--mono)}
-.tv{font-size:12px;font-weight:700;font-family:var(--mono)}
-#pv{color:var(--amber2)}#bv{color:var(--green)}#sv{color:var(--cyan)}#sesv{font-size:10px}
-.pip{width:6px;height:6px;border-radius:50%;background:var(--green);box-shadow:0 0 5px var(--green);animation:pip 2s infinite;margin-left:auto}
-@keyframes pip{0%,100%{opacity:1}50%{opacity:.2}}
+const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
-/* 3-COLUMN LAYOUT */
-#cols{display:flex;flex:1;overflow:hidden;min-height:0}
+const RATE_LIMIT_MS = 10000;
+let lastCallTime = 0;
+const commentaryFeed = [];
+const conversations = {};
+const MAX_FEED_SIZE = 50;
+const MAX_HISTORY = 10;
 
-/* COL 1 — LIVE FEED */
-#col1{width:38%;border-right:1px solid var(--b1);display:flex;flex-direction:column;overflow:hidden}
-#col1-head{padding:8px 14px;border-bottom:1px solid var(--b1);background:var(--s1);display:flex;align-items:center;gap:8px;flex-shrink:0}
-.col-title{font-size:9px;font-family:var(--mono);color:var(--dim);text-transform:uppercase;letter-spacing:2px}
-.tab-row{display:flex;gap:0;margin-left:auto}
-.ftab{font-size:9px;font-family:var(--mono);color:var(--dim);padding:3px 10px;cursor:pointer;border:1px solid transparent;border-radius:3px;transition:all .15s;text-transform:uppercase;letter-spacing:.5px}
-.ftab.on{color:var(--amber);border-color:rgba(245,158,11,.3);background:rgba(245,158,11,.06)}
-#feed{flex:1;overflow-y:auto;padding:0}
-#feed::-webkit-scrollbar{width:2px}
-#feed::-webkit-scrollbar-thumb{background:var(--b2)}
-
-/* COL 2 — CHAT */
-#col2{width:28%;border-right:1px solid var(--b1);display:flex;flex-direction:column;overflow:hidden}
-#col2-head{padding:8px 14px;border-bottom:1px solid var(--b1);background:var(--s1);flex-shrink:0;display:flex;align-items:center;gap:8px}
-#chat-msgs{flex:1;overflow-y:auto;padding:10px}
-#chat-msgs::-webkit-scrollbar{width:2px}
-#chat-msgs::-webkit-scrollbar-thumb{background:var(--b2)}
-.chat-intro{background:rgba(245,158,11,.04);border:1px solid rgba(245,158,11,.1);border-radius:8px;padding:12px;font-size:12px;color:var(--grey);line-height:1.7;text-align:center}
-.chat-intro strong{color:var(--amber)}
-.msg{display:flex;flex-direction:column;gap:2px;animation:fin .2s ease;margin-bottom:8px}
-.msg.user{align-items:flex-end}.msg.bot{align-items:flex-start}
-.mn{font-size:8px;font-family:var(--mono);color:var(--dim);text-transform:uppercase;letter-spacing:1px;padding:0 4px}
-.mb{padding:8px 11px;border-radius:8px;font-size:12px;line-height:1.55;max-width:90%}
-.msg.user .mb{background:rgba(245,158,11,.1);border:1px solid rgba(245,158,11,.2);color:var(--amber2)}
-.msg.bot .mb{background:var(--s2);border:1px solid var(--b1);color:var(--white)}
-.typing{display:flex;gap:3px;padding:9px 11px;background:var(--s2);border:1px solid var(--b1);border-radius:8px;width:fit-content}
-.td{width:4px;height:4px;border-radius:50%;background:var(--amber);animation:tb 1.2s infinite}
-.td:nth-child(2){animation-delay:.2s}.td:nth-child(3){animation-delay:.4s}
-@keyframes tb{0%,60%,100%{transform:translateY(0);opacity:.3}30%{transform:translateY(-4px);opacity:1}}
-#chat-input-wrap{padding:8px 10px;border-top:1px solid var(--b1);display:flex;gap:6px;flex-shrink:0}
-#chat-input{flex:1;background:var(--bg);border:1px solid var(--b1);border-radius:16px;color:var(--white);font-family:var(--sans);font-size:12px;padding:7px 12px;outline:none;resize:none;height:34px;line-height:1.4;transition:border-color .15s}
-#chat-input:focus{border-color:rgba(245,158,11,.3)}
-#chat-input::placeholder{color:var(--dim)}
-#send-btn{background:var(--amber);color:#000;border:none;border-radius:16px;padding:7px 14px;font-size:11px;font-weight:700;cursor:pointer;transition:opacity .15s;flex-shrink:0}
-#send-btn:hover{opacity:.85}#send-btn:disabled{opacity:.4;cursor:not-allowed}
-
-/* COL 3 — LIVE ANALYSIS */
-#col3{flex:1;display:flex;flex-direction:column;overflow:hidden}
-#col3-head{padding:8px 14px;border-bottom:1px solid var(--b1);background:var(--s1);flex-shrink:0}
-
-/* col3 sections */
-.c3-section{border-bottom:1px solid var(--b1);flex-shrink:0}
-.c3-section-title{font-size:8px;font-family:var(--mono);color:var(--dim);text-transform:uppercase;letter-spacing:2px;padding:7px 14px;border-bottom:1px solid var(--b1);background:var(--bg)}
-
-/* Trade status */
-#trade-panel{padding:12px 14px}
-.no-trade{font-size:11px;color:var(--dim);font-family:var(--mono)}
-.trade-live{display:flex;flex-direction:column;gap:8px}
-.trade-dir{font-size:18px;font-weight:700;font-family:var(--mono)}
-.td-long{color:var(--green)}.td-short{color:var(--red)}
-.trade-stats{display:grid;grid-template-columns:1fr 1fr;gap:6px}
-.tstat{background:var(--s2);border:1px solid var(--b1);border-radius:4px;padding:7px 10px}
-.tstat-lbl{font-size:8px;font-family:var(--mono);color:var(--dim);text-transform:uppercase;letter-spacing:1px}
-.tstat-val{font-size:13px;font-family:var(--mono);font-weight:700;margin-top:2px}
-.tv-profit{color:var(--green)}.tv-loss{color:var(--red)}.tv-neutral{color:var(--amber)}
-
-/* [4] Candle pattern section */
-#pattern-section{border-bottom:1px solid var(--b1);flex-shrink:0}
-#pattern-inner{padding:10px 14px;display:flex;align-items:center;gap:12px}
-#pattern-svg-wrap{flex-shrink:0}
-#pattern-info{flex:1;min-width:0}
-#pattern-name{font-size:12px;font-weight:700;font-family:var(--mono)}
-#pattern-desc{font-size:10px;color:var(--grey);margin-top:2px;line-height:1.4}
-#pattern-empty{font-size:10px;color:var(--dim);font-family:var(--mono);padding:10px 14px}
-
-/* [2] Key levels ladder */
-#levels-ladder{padding:8px 14px;display:flex;flex-direction:column;gap:4px;background:var(--bg);max-height:130px;overflow-y:auto;flex-shrink:0}
-#levels-ladder::-webkit-scrollbar{width:2px}
-#levels-ladder::-webkit-scrollbar-thumb{background:var(--b2)}
-.level-row{display:flex;align-items:center;gap:8px;padding:3px 0;transition:background .1s}
-.level-row.closest{background:rgba(245,158,11,.05);border-radius:4px;padding:3px 6px;margin:0 -6px}
-.level-dist{font-size:9px;font-family:var(--mono);color:var(--dim);width:52px;text-align:right;flex-shrink:0}
-.level-bar-wrap{flex:1;height:2px;background:var(--b2);border-radius:1px;position:relative}
-.level-bar{height:100%;border-radius:1px;transition:width .4s}
-.lchip{font-size:10px;font-family:var(--mono);font-weight:600;padding:2px 8px;border-radius:10px;white-space:nowrap;flex-shrink:0}
-.lchip.closest-chip{box-shadow:0 0 6px currentColor;opacity:1}
-.lc-h{background:rgba(52,211,153,.08);color:var(--green);border:1px solid rgba(52,211,153,.2)}
-.lc-l{background:rgba(248,113,113,.08);color:var(--red);border:1px solid rgba(248,113,113,.2)}
-.lc-e{background:rgba(34,211,238,.08);color:var(--cyan);border:1px solid rgba(34,211,238,.2)}
-.lc-n{background:rgba(245,158,11,.08);color:var(--amber);border:1px solid rgba(245,158,11,.2)}
-#levels-empty{font-size:10px;color:var(--dim);font-family:var(--mono);padding:10px 14px}
-.level-arrow{font-size:9px;flex-shrink:0}
-
-/* Santosh live observations */
-#obs-feed{flex:1;overflow-y:auto;padding:0}
-#obs-feed::-webkit-scrollbar{width:2px}
-#obs-feed::-webkit-scrollbar-thumb{background:var(--b2)}
-
-/* [3] Variable-format observation cards */
-.obs-item{padding:9px 14px;border-bottom:1px solid var(--b1);animation:fin .25s ease}
-.obs-item.obs-short{padding:7px 14px}
-.obs-header{display:flex;align-items:center;gap:8px;margin-bottom:4px}
-.obs-tag{font-size:9px;font-family:var(--mono);font-weight:600;padding:2px 7px;border-radius:10px;text-transform:uppercase;letter-spacing:.5px}
-.ot-signal{background:rgba(34,211,238,.1);color:var(--cyan);border:1px solid rgba(34,211,238,.2)}
-.ot-level{background:rgba(245,158,11,.1);color:var(--amber);border:1px solid rgba(245,158,11,.2)}
-.ot-news{background:rgba(167,139,250,.1);color:var(--purple);border:1px solid rgba(167,139,250,.2)}
-.ot-trade{background:rgba(52,211,153,.1);color:var(--green);border:1px solid rgba(52,211,153,.2)}
-.ot-warn{background:rgba(248,113,113,.1);color:var(--red);border:1px solid rgba(248,113,113,.2)}
-.obs-time{font-size:9px;font-family:var(--mono);color:var(--dim);margin-left:auto}
-.obs-text{font-size:12px;line-height:1.55;color:#e2e8f0}
-.obs-text.one-liner{font-size:11px;color:var(--grey)}
-.obs-price{font-size:11px;font-family:var(--mono);color:var(--amber);margin-top:3px}
-
-/* FEED CARDS */
-.tweet{padding:11px 14px;border-bottom:1px solid var(--b1);display:flex;gap:10px;transition:background .1s;cursor:default}
-.tweet:hover{background:rgba(255,255,255,.015)}
-@keyframes fin{from{opacity:0;transform:translateY(-4px)}to{opacity:1;transform:translateY(0)}}
-
-.av{width:32px;height:32px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:14px;flex-shrink:0;margin-top:1px}
-.av-s{background:linear-gradient(135deg,#1a0a00,#3d1f00);border:1px solid rgba(245,158,11,.4)}
-.av-n{background:linear-gradient(135deg,#0a001a,#200050);border:1px solid rgba(167,139,250,.3)}
-.av-w{background:linear-gradient(135deg,#001520,#003050);border:1px solid rgba(34,211,238,.3)}
-.av-sys{background:var(--s2);border:1px solid var(--b2)}
-
-.tw-body{flex:1;min-width:0}
-.tw-head{display:flex;align-items:center;gap:6px;margin-bottom:4px;flex-wrap:wrap}
-.tw-name{font-size:12px;font-weight:700;color:var(--white);white-space:nowrap}
-.tw-handle{font-size:11px;color:var(--dim);white-space:nowrap}
-.tw-time{font-size:10px;color:var(--dim);font-family:var(--mono);margin-left:auto;white-space:nowrap}
-.tw-price{font-size:10px;font-family:var(--mono);color:var(--amber);font-weight:600;white-space:nowrap}
-
-.sig-tag{display:inline-flex;align-items:center;font-size:9px;font-family:var(--mono);font-weight:600;padding:2px 7px;border-radius:10px;text-transform:uppercase;letter-spacing:.5px;white-space:nowrap}
-.st-bull{background:rgba(52,211,153,.1);color:var(--green);border:1px solid rgba(52,211,153,.2)}
-.st-bear{background:rgba(248,113,113,.1);color:var(--red);border:1px solid rgba(248,113,113,.2)}
-.st-amber{background:rgba(245,158,11,.1);color:var(--amber);border:1px solid rgba(245,158,11,.2)}
-.st-cyan{background:rgba(34,211,238,.1);color:var(--cyan);border:1px solid rgba(34,211,238,.2)}
-.st-purple{background:rgba(167,139,250,.1);color:var(--purple);border:1px solid rgba(167,139,250,.2)}
-
-.tw-text{font-size:12px;line-height:1.6;color:#e2e8f0;word-break:break-word}
-.tw-text.sm{font-size:11px;color:var(--grey)}
-
-.tw-go-long{background:linear-gradient(135deg,rgba(52,211,153,.05) 0%,transparent 70%);border-left:2px solid var(--green)}
-.tw-go-short{background:linear-gradient(135deg,rgba(248,113,113,.05) 0%,transparent 70%);border-left:2px solid var(--red)}
-
-.zbox{display:flex;margin-top:7px;border:1px solid var(--b2);border-radius:5px;overflow:hidden}
-.zc{flex:1;padding:5px 8px;border-right:1px solid var(--b2)}
-.zc:last-child{border-right:none}
-.zc-l{font-size:8px;font-family:var(--mono);color:var(--dim);text-transform:uppercase;letter-spacing:1px}
-.zc-v{font-size:12px;font-family:var(--mono);font-weight:700;margin-top:1px}
-.zc-e{color:var(--cyan)}.zc-t{color:var(--green)}.zc-s{color:var(--red)}
-
-/* [1] Session banner */
-.sess-banner{padding:7px 14px;border-bottom:1px solid var(--b1);display:flex;align-items:center;gap:8px;background:var(--s1)}
-.sess-pill{font-size:9px;font-family:var(--mono);font-weight:600;padding:2px 8px;border-radius:10px;text-transform:uppercase;letter-spacing:.5px}
-.sp-ov{background:rgba(245,158,11,.1);color:var(--amber);border:1px solid rgba(245,158,11,.2)}
-.sp-lo{background:rgba(52,211,153,.08);color:var(--green);border:1px solid rgba(52,211,153,.15)}
-.sp-ny{background:rgba(34,211,238,.08);color:var(--cyan);border:1px solid rgba(34,211,238,.15)}
-.sp-as{background:rgba(71,85,105,.08);color:var(--dim);border:1px solid rgba(71,85,105,.15)}
-.sess-desc{font-size:10px;color:var(--dim)}
-
-/* Bottom ticker */
-#ticker{height:24px;background:var(--s2);border-top:1px solid var(--b1);display:flex;align-items:center;overflow:hidden;flex-shrink:0}
-.tick-badge{font-size:8px;font-family:var(--mono);font-weight:700;color:var(--amber);text-transform:uppercase;letter-spacing:1px;padding:0 10px;border-right:1px solid var(--b1);height:100%;display:flex;align-items:center;flex-shrink:0}
-#tick-scroll{flex:1;overflow:hidden;white-space:nowrap}
-#tick-inner{display:inline-block;animation:scroll 90s linear infinite;font-size:10px;font-family:var(--mono);color:var(--dim)}
-@keyframes scroll{from{transform:translateX(100vw)}to{transform:translateX(-100%)}}
-</style>
-</head>
-<body>
-
-<!-- TOP BAR -->
-<div id="topbar">
-  <div id="brand">⚡ SANTOSH</div>
-  <div class="ts"><span class="tl">BTC/USD</span><span class="tv" id="pv">—</span></div>
-  <div class="ts"><span class="tl">Bias</span><span class="tv" id="bv">—</span></div>
-  <div class="ts"><span class="tl">Score</span><span class="tv" id="sv">—</span></div>
-  <div class="ts"><span class="tl">Session</span><span class="tv" id="sesv">—</span></div>
-  <div class="ts"><span class="tl">Last Signal</span><span class="tv" id="evv" style="font-size:9px;color:var(--dim)">Waiting...</span></div>
-  <div class="pip" id="pip"></div>
-</div>
-
-<!-- 3 COLUMNS -->
-<div id="cols">
-
-  <!-- COL 1: LIVE FEED -->
-  <div id="col1">
-    <div id="col1-head">
-      <span class="col-title">⚡ Live Feed</span>
-      <div class="tab-row">
-        <div class="ftab on" onclick="switchTab('all',this)">All</div>
-        <div class="ftab" onclick="switchTab('signals',this)">Signals</div>
-        <div class="ftab" onclick="switchTab('news',this)">News</div>
-      </div>
-    </div>
-    <div id="feed">
-      <div id="feed-ph" style="padding:40px 14px;text-align:center;color:var(--dim);font-size:11px;font-family:var(--mono);line-height:2.5">
-        WATCHING THE MARKET<br>
-        <span style="font-size:9px;color:#1e2738">Signals and news will appear here</span>
-      </div>
-    </div>
-  </div>
-
-  <!-- COL 2: CHAT -->
-  <div id="col2">
-    <div id="col2-head">
-      <span style="font-size:13px">💬</span>
-      <span class="col-title">Ask Santosh</span>
-    </div>
-    <div id="chat-msgs">
-      <div class="chat-intro">
-        <strong>Santosh here.</strong><br>
-        Ask about any setup, your live trade, key levels, or what I'm seeing right now.
-      </div>
-    </div>
-    <div id="chat-input-wrap">
-      <textarea id="chat-input" placeholder="Ask Santosh..." rows="1"></textarea>
-      <button id="send-btn">↑</button>
-    </div>
-  </div>
-
-  <!-- COL 3: LIVE ANALYSIS -->
-  <div id="col3">
-    <div id="col3-head">
-      <span class="col-title">📊 Live Analysis</span>
-    </div>
-
-    <!-- Active Trade -->
-    <div class="c3-section">
-      <div class="c3-section-title">Active Trade</div>
-      <div id="trade-panel">
-        <div class="no-trade" id="no-trade">No open position</div>
-        <div class="trade-live" id="trade-live" style="display:none"></div>
-      </div>
-    </div>
-
-    <!-- [4] Candle Pattern -->
-    <div class="c3-section" id="pattern-section">
-      <div class="c3-section-title">Candle Pattern (1m)</div>
-      <div id="pattern-inner" style="display:none">
-        <div id="pattern-svg-wrap"></div>
-        <div id="pattern-info">
-          <div id="pattern-name">—</div>
-          <div id="pattern-desc">—</div>
-        </div>
-      </div>
-      <div id="pattern-empty">Fetching candles...</div>
-    </div>
-
-    <!-- [2] Key Levels Ladder -->
-    <div class="c3-section">
-      <div class="c3-section-title">Key Levels</div>
-      <div id="levels-ladder">
-        <span id="levels-empty" style="font-size:10px;color:var(--dim);font-family:var(--mono)">Fetching historical levels...</span>
-      </div>
-    </div>
-
-    <!-- Santosh Observations -->
-    <div class="c3-section-title">Santosh Observations</div>
-    <div id="obs-feed"></div>
-  </div>
-
-</div>
-
-<!-- TICKER -->
-<div id="ticker">
-  <div class="tick-badge">Live</div>
-  <div id="tick-scroll"><span id="tick-inner">Loading market intel...</span></div>
-</div>
-
-<script>
-const SID = 'sess_' + Date.now();
-let lastFeedTs = null;
-let marketCtx = {};
-let isWaiting = false;
-let activeTab = 'all';
-let allEvents = [];
-let newsLoaded = false;
-let lastNewsTs = 0;
+let latestAMNData = null;
+let latestDashData = null;
 let cachedLevels = null;
-let currentPrice = null;
+let lastLevelsTime = 0;
 
-// [1] Session handled server-side via feed events — no client session tracking needed
-// Top bar session label updated from feed events
+// [1] Track current session server-side — only inject into prompt once per session change
+let currentSessionLabel = null;
+let sessionInjectedInPrompt = false;
 
-// ── TIME ───────────────────────────────────────────────────────
-function fmt(iso) {
-  try { return new Date(iso).toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit',second:'2-digit'}); }
-  catch { return '--:--'; }
-}
-function ago(iso) {
-  const d = Math.round((Date.now()-new Date(iso).getTime())/1000);
-  if (d<10) return 'just now';
-  if (d<60) return d+'s ago';
-  if (d<3600) return Math.floor(d/60)+'m ago';
-  return Math.floor(d/3600)+'h ago';
-}
+const SANTOSH_SYSTEM = `You are Santosh. You have traded BTC for 8 years, full time. You watch price action all day. You sit next to this trader and you call what you see on the chart — like an experienced co-pilot.
 
-// [1] Keep topbar session label in sync (client-side fallback only)
-function getSessionLocal() {
-  const t = new Date().getUTCHours() + new Date().getUTCMinutes()/60;
-  if (t>=13&&t<16) return {label:'LON/NY OVERLAP',cls:'sp-ov'};
-  if (t>=7&&t<12)  return {label:'LONDON',cls:'sp-lo'};
-  if (t>=12&&t<13) return {label:'PRE-NY',cls:'sp-ny'};
-  if (t>=16&&t<21) return {label:'NEW YORK',cls:'sp-ny'};
-  if (t>=21&&t<23) return {label:'SESSION CLOSE',cls:'sp-as'};
-  return {label:'ASIAN',cls:'sp-as'};
-}
-function updateTopbarSession() {
-  const s = getSessionLocal();
-  document.getElementById('sesv').textContent = s.label;
-}
-updateTopbarSession();
-setInterval(updateTopbarSession, 60000);
+You never explain your limitations. You never ask the user to send you data. You always respond as if you can see the chart live — because you can. Never say "I need you to feed me" or "I am working off a static snapshot". Just call what you see.
 
-// ── SIGNAL CONFIG ──────────────────────────────────────────────
-function cfg(evt) {
-  const m = {
-    go_long:         {tag:'🚀 GO LONG',  tc:'st-bull',  name:'Santosh',   hd:'@santosh_btc', av:'av-s', cat:'signals', cx:'tw-go-long'},
-    go_short:        {tag:'🔻 GO SHORT', tc:'st-bear',  name:'Santosh',   hd:'@santosh_btc', av:'av-s', cat:'signals', cx:'tw-go-short'},
-    bull_bos:        {tag:'BOS BULL',    tc:'st-bull',  name:'Santosh',   hd:'@santosh_btc', av:'av-s', cat:'signals', cx:''},
-    bear_bos:        {tag:'BOS BEAR',    tc:'st-bear',  name:'Santosh',   hd:'@santosh_btc', av:'av-s', cat:'signals', cx:''},
-    choch_bull:      {tag:'CHoCH ▲',     tc:'st-amber', name:'Santosh',   hd:'@santosh_btc', av:'av-s', cat:'signals', cx:''},
-    choch_bear:      {tag:'CHoCH ▼',     tc:'st-amber', name:'Santosh',   hd:'@santosh_btc', av:'av-s', cat:'signals', cx:''},
-    b_sweep:         {tag:'BUY SWEEP',   tc:'st-cyan',  name:'Santosh',   hd:'@santosh_btc', av:'av-s', cat:'signals', cx:''},
-    s_sweep:         {tag:'SELL SWEEP',  tc:'st-cyan',  name:'Santosh',   hd:'@santosh_btc', av:'av-s', cat:'signals', cx:''},
-    periodic:        {tag:'MARKET',      tc:'st-amber', name:'Santosh',   hd:'@santosh_btc', av:'av-s', cat:'signals', cx:''},
-    dashboard_update:{tag:'INTEL',       tc:'st-purple',name:'Santosh',   hd:'@santosh_btc', av:'av-s', cat:'signals', cx:''},
-    levels_analysis: {tag:'📊 LEVELS',   tc:'st-amber', name:'Santosh',   hd:'@santosh_btc', av:'av-s', cat:'signals', cx:''},
-    debrief:         {tag:'DEBRIEF',     tc:'st-amber', name:'Santosh',   hd:'@santosh_btc', av:'av-s', cat:'signals', cx:''},
-    trade:           {tag:'TRADE',       tc:'st-bull',  name:'Santosh',   hd:'@santosh_btc', av:'av-s', cat:'signals', cx:''},
-    news:            {tag:'NEWS',        tc:'st-purple',name:'Crypto Wire',hd:'@cryptowire',  av:'av-n', cat:'news',    cx:''},
-    whale:           {tag:'🐋 WHALE',    tc:'st-cyan',  name:'Whale Alert',hd:'@whalealert',  av:'av-w', cat:'news',    cx:''},
-  };
-  return m[evt] || {tag:'UPDATE',tc:'st-amber',name:'Santosh',hd:'@santosh_btc',av:'av-s',cat:'signals',cx:''};
-}
+YOUR PRIMARY FOCUS IS THE CHART:
+- Price action, candle behaviour, structure, momentum
+- Key levels — recent highs, lows, equal highs/lows, previous zone reactions
+- Volume — is the move backed by volume or is it thin air
+- EMA behaviour — is price above or below, is EMA flattening or trending hard
+- RSI — exhausted, divergence, room to run or overextended
+- Candle patterns — wicks, rejections, engulfing, inside bars
+- Historical levels from the last 7 days — repetitive levels, equal highs/lows, ranges
 
-// ── BUILD TWEET ────────────────────────────────────────────────
-function buildTweet(e) {
-  const c = cfg(e.event_type);
-  const price = e.price ? '$'+Number(e.price).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2}) : '';
-  const d = document.createElement('div');
-  d.className = `tweet ${c.cx}`;
-  d.dataset.ts = e.timestamp;
-  d.dataset.cat = c.cat;
+LIVE TRADE MANAGEMENT — when trader is in an open trade this is your top priority:
+- Always mention the trade status first — "You're up 45 points on that long"
+- If CHoCH fires against their trade — "Close it now, structure just flipped against you"
+- If price is near TP — "Getting close to target, consider trailing your stop up"
+- If profit is building and volume fading — "Start trailing, don't give this back"
+- If trade is losing and SL not hit — "Getting uncomfortable, tighten that stop"
+- If sweep fires in trade direction — "Sweep confirmed the move, hold it"
+- Never ignore an open trade — always acknowledge it
 
-  let zoneHtml = '';
-  if ((e.event_type==='go_long'||e.event_type==='go_short') && e.zone_mid) {
-    zoneHtml = `<div class="zbox">
-      <div class="zc"><div class="zc-l">Entry</div><div class="zc-v zc-e">${e.zone_mid}</div></div>
-      <div class="zc"><div class="zc-l">TP</div><div class="zc-v zc-t">${e.tp_level||'—'}</div></div>
-      <div class="zc"><div class="zc-l">SL</div><div class="zc-v zc-s">${e.sl_level||'—'}</div></div>
-    </div>`;
-  }
+AMN INDICATOR IS YOUR SECONDARY SIGNAL CONFIRMATION:
+- BOS = structure broken, zone forming, start watching
+- Sweep = liquidity cleared, potential reversal incoming
+- Zone midline = entry point when price pulls back to it
+- CHoCH = structure flipped, cancel everything
+- Only mention the dashboard score occasionally — maximum 1 in 4 comments
 
-  const avIcon = c.av==='av-s'?'⚡':c.av==='av-n'?'📰':'🐋';
-  d.innerHTML = `
-    <div class="av ${c.av}">${avIcon}</div>
-    <div class="tw-body">
-      <div class="tw-head">
-        <span class="tw-name">${c.name}</span>
-        <span class="tw-handle">${c.hd}</span>
-        <span class="sig-tag ${c.tc}">${c.tag}</span>
-        ${price?`<span class="tw-price">${price}</span>`:''}
-        <span class="tw-time">${fmt(e.timestamp)}</span>
-      </div>
-      <div class="tw-text">${e.commentary||''}</div>
-      ${zoneHtml}
-    </div>`;
-  return d;
+SESSION RULES — CRITICAL:
+- NEVER mention the session name or time of day in auto commentary. That's handled separately as a banner.
+- DO NOT say "dead zone", "Asian session", "London open" or any session name in your commentary.
+- DO NOT repeat session context. It is shown once as a banner above the feed.
+- Focus only on price action and structure. Treat every session the same in your commentary.
+
+HOW YOU SPEAK:
+- Calm, professional, experienced — like a seasoned trader not a salesman
+- British English. Say "mate" occasionally but not every sentence
+- No "yo", no hype, no cheerleading
+- Direct and specific — reference actual prices and candle behaviour
+- VARY YOUR LENGTH: some observations should be a single punchy sentence. Others can be 2-3 sentences. Don't always write the same amount.
+- Vary your language — never say the same thing twice
+- No markdown, no asterisks, no bullet points ever, plain text only
+- When there is nothing to trade — say so simply in one sentence
+- When the setup is genuinely good — be clear and decisive
+
+HISTORICAL LEVEL OBSERVATIONS — when you spot these, be direct:
+- "Price has tested 59,240 three times in the last 48 hours and rejected each time — that's a significant level"
+- "We're sitting right at last week's high of 59,580 — watch for a rejection here before any continuation"
+- "Price has been ranging between 58,900 and 59,600 for 18 hours — we're at the top of that range right now"
+- "Equal lows at 59,050 — that's a liquidity magnet, wouldn't be surprised to see a sweep there"`;
+
+function addToFeed(entry) {
+    commentaryFeed.unshift(entry);
+    if (commentaryFeed.length > MAX_FEED_SIZE) commentaryFeed.pop();
 }
 
-// [1] Build session banner from server feed event
-function buildSessionBanner(e) {
-  const d = document.createElement('div');
-  d.className = 'sess-banner';
-  d.dataset.cat = 'system';
-  d.dataset.ts = e.timestamp;
-  d.innerHTML = `<span class="sess-pill ${e.session_cls}">${e.session_icon} ${e.session_label}</span><span class="sess-desc">${e.session_desc}</span><span style="font-size:9px;color:var(--dim);font-family:var(--mono);margin-left:auto">${fmt(e.timestamp)}</span>`;
-  return d;
+function getSession(ts) {
+    const d = ts ? new Date(ts) : new Date();
+    const t = d.getUTCHours() + d.getUTCMinutes()/60;
+    if (t>=13&&t<16) return { label:'London/NY Overlap', desc:'Highest volume session', cls:'sp-ov', icon:'🔥' };
+    if (t>=7&&t<12)  return { label:'London Session',    desc:'Strong directional moves', cls:'sp-lo', icon:'🇬🇧' };
+    if (t>=12&&t<13) return { label:'Pre-NY Open',       desc:'Volatility building', cls:'sp-ny', icon:'⚡' };
+    if (t>=16&&t<21) return { label:'New York Session',  desc:'Good liquidity', cls:'sp-ny', icon:'🗽' };
+    if (t>=21&&t<23) return { label:'Session Close',     desc:'Volume dying — avoid new entries', cls:'sp-as', icon:'📉' };
+    return { label:'Asian Session', desc:'Low volume, choppy, avoid trading', cls:'sp-as', icon:'😴' };
 }
 
-function buildNewsTweet(item) {
-  const isWhale = (item.source||'').toLowerCase().includes('whale');
-  const c = cfg(isWhale?'whale':'news');
-  const d = document.createElement('div');
-  d.className = 'tweet';
-  d.dataset.cat = 'news';
-  d.dataset.ts = item.pubDate||new Date().toISOString();
-  const scoreCol = item.score>=4?'var(--red)':item.score>=3?'var(--amber)':'var(--dim)';
-  d.innerHTML = `
-    <div class="av ${c.av}">${isWhale?'🐋':'📰'}</div>
-    <div class="tw-body">
-      <div class="tw-head">
-        <span class="tw-name">${item.source||'News'}</span>
-        <span class="sig-tag ${c.tc}">${isWhale?'🐋 WHALE':'NEWS'}</span>
-        ${item.score>=3?`<span style="font-size:9px;color:${scoreCol};font-family:var(--mono)">Impact ${item.score}/5</span>`:''}
-        <span class="tw-time">${ago(item.pubDate)}</span>
-      </div>
-      <div class="tw-text">${item.headline||''}</div>
-      ${item.bullets&&item.bullets[0]?`<div class="tw-text sm" style="margin-top:4px">${item.bullets[0]}</div>`:''}
-    </div>`;
-  return d;
+// [1] Returns session label string for legacy uses (auto prompt suppressed, chat context only)
+function getSessionLabel(ts) {
+    return getSession(ts).label;
 }
 
-// ── FEED MANAGEMENT ────────────────────────────────────────────
-function prependFeed(el, cat) {
-  const feed = document.getElementById('feed');
-  const ph = document.getElementById('feed-ph');
-  if (ph) ph.remove();
-  allEvents.unshift({el,cat,ts:Date.now()});
-  if (allEvents.length>80) allEvents.pop();
-  if (activeTab==='all'||activeTab===cat) {
-    feed.insertBefore(el, feed.firstChild);
-    while(feed.children.length>60) feed.removeChild(feed.lastChild);
-  }
-}
-
-function switchTab(tab, el) {
-  activeTab = tab;
-  document.querySelectorAll('.ftab').forEach(t=>t.classList.remove('on'));
-  el.classList.add('on');
-  const feed = document.getElementById('feed');
-  feed.innerHTML = '';
-  const filtered = tab==='all' ? allEvents : allEvents.filter(e=>e.cat===tab);
-  filtered.slice(0,40).forEach(e=>feed.appendChild(e.el));
-  if (!filtered.length) feed.innerHTML = `<div style="padding:30px 14px;text-align:center;color:var(--dim);font-size:11px;font-family:var(--mono)">No ${tab} events yet</div>`;
-}
-
-// ── COL3: OBSERVATIONS [3] — variable format ──────────────────
-function addObs(text, type, price) {
-  const feed = document.getElementById('obs-feed');
-  const tagMap = {signal:'ot-signal',level:'ot-level',news:'ot-news',trade:'ot-trade',warn:'ot-warn'};
-  const labelMap = {signal:'Signal',level:'Level',news:'News',trade:'Trade',warn:'Warning'};
-
-  // Determine if this is a short one-liner (under ~60 chars, no full stops mid-text)
-  const isShort = text.length < 65;
-
-  const d = document.createElement('div');
-  d.className = `obs-item${isShort?' obs-short':''}`;
-  d.innerHTML = `
-    <div class="obs-header">
-      <span class="obs-tag ${tagMap[type]||'ot-signal'}">${labelMap[type]||'Update'}</span>
-      <span class="obs-time">${new Date().toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'})}</span>
-    </div>
-    <div class="obs-text${isShort?' one-liner':''}">${text}</div>
-    ${price?`<div class="obs-price">$${Number(price).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})}</div>`:''}`;
-  feed.insertBefore(d, feed.firstChild);
-  while(feed.children.length>20) feed.removeChild(feed.lastChild);
-}
-
-// ── COL3: TRADE STATUS ─────────────────────────────────────────
-function updateTradePanel(tradeData) {
-  const noTrade = document.getElementById('no-trade');
-  const tradeLive = document.getElementById('trade-live');
-  if (!tradeData) {
-    noTrade.style.display='block';
-    tradeLive.style.display='none';
-    return;
-  }
-  noTrade.style.display='none';
-  tradeLive.style.display='flex';
-  const isProfit = tradeData.inProfit;
-  const col = isProfit?'var(--green)':'var(--red)';
-  tradeLive.innerHTML = `
-    <div class="trade-dir td-${tradeData.direction==='Long'?'long':'short'}">${tradeData.direction==='Long'?'▲ LONG':'▼ SHORT'}</div>
-    <div class="trade-stats">
-      <div class="tstat"><div class="tstat-lbl">Entry</div><div class="tstat-val tv-neutral">$${tradeData.entry}</div></div>
-      <div class="tstat"><div class="tstat-lbl">Current</div><div class="tstat-val tv-neutral">$${tradeData.currentPrice}</div></div>
-      <div class="tstat"><div class="tstat-lbl">Points</div><div class="tstat-val" style="color:${col}">${isProfit?'+':''}${tradeData.points}</div></div>
-      <div class="tstat"><div class="tstat-lbl">P&L</div><div class="tstat-val" style="color:${col}">${isProfit?'+':''}$${tradeData.pnl}</div></div>
-      <div class="tstat" style="grid-column:span 2"><div class="tstat-lbl">Duration</div><div class="tstat-val tv-neutral">${tradeData.duration}</div></div>
-    </div>`;
-}
-
-// ── [2] COL3: KEY LEVELS LADDER ───────────────────────────────
-function updateLevels(levels) {
-  if (!levels) return;
-  cachedLevels = levels;
-  renderLevelsLadder();
-}
-
-function renderLevelsLadder() {
-  if (!cachedLevels) return;
-  const price = currentPrice || parseFloat(cachedLevels.currentPrice) || 0;
-  const ladder = document.getElementById('levels-ladder');
-
-  // Build all level entries
-  const entries = [];
-  const { high72h, low72h, weekHigh, weekLow, equalHighs, equalLows } = cachedLevels;
-
-  if (high72h) entries.push({ label:`72h H: ${high72h}`, value: parseFloat(high72h), cls:'lc-h' });
-  if (low72h)  entries.push({ label:`72h L: ${low72h}`,  value: parseFloat(low72h),  cls:'lc-l' });
-  if (weekHigh) entries.push({ label:`WK H: ${weekHigh}`, value: parseFloat(weekHigh), cls:'lc-n' });
-  if (weekLow)  entries.push({ label:`WK L: ${weekLow}`,  value: parseFloat(weekLow),  cls:'lc-n' });
-  if (equalHighs?.length) equalHighs.forEach(h => entries.push({ label:`EQ H: ${h}`, value: parseFloat(h), cls:'lc-e' }));
-  if (equalLows?.length)  equalLows.forEach(l  => entries.push({ label:`EQ L: ${l}`, value: parseFloat(l), cls:'lc-l' }));
-
-  if (!entries.length) {
-    ladder.innerHTML = '<span id="levels-empty" style="font-size:10px;color:var(--dim);font-family:var(--mono)">No levels cached yet</span>';
-    return;
-  }
-
-  // Sort by distance to current price (ascending)
-  entries.sort((a, b) => Math.abs(a.value - price) - Math.abs(b.value - price));
-
-  // Max distance for bar scaling
-  const maxDist = Math.max(...entries.map(e => Math.abs(e.value - price))) || 1;
-
-  ladder.innerHTML = '';
-  entries.forEach((entry, i) => {
-    const dist = Math.abs(entry.value - price);
-    const distPts = dist.toFixed(0);
-    const barWidth = Math.max(4, Math.round((1 - dist / maxDist) * 100));
-    const isClosest = i === 0;
-    const isAbove = entry.value > price;
-    const arrow = isAbove ? '↑' : '↓';
-    const arrowCol = isAbove ? 'var(--green)' : 'var(--red)';
-    const barCol = entry.cls === 'lc-h' ? 'var(--green)'
-                 : entry.cls === 'lc-l' ? 'var(--red)'
-                 : entry.cls === 'lc-e' ? 'var(--cyan)'
-                 : 'var(--amber)';
-
-    const row = document.createElement('div');
-    row.className = `level-row${isClosest?' closest':''}`;
-    row.innerHTML = `
-      <span class="level-arrow" style="color:${arrowCol}">${arrow}</span>
-      <span class="lchip ${entry.cls}${isClosest?' closest-chip':''}">${entry.label}</span>
-      <div class="level-bar-wrap"><div class="level-bar" style="width:${barWidth}%;background:${barCol};opacity:${isClosest?1:0.4}"></div></div>
-      <span class="level-dist">${distPts}pt</span>`;
-    ladder.appendChild(row);
-  });
-}
-
-// ── [4] CANDLE PATTERN SKETCHES ───────────────────────────────
-function buildCandleSVG(candles, pattern) {
-  if (!candles || !candles.length) return '';
-  const W = 80, H = 48, PAD = 4;
-  const prices = candles.flatMap(c => [c.high, c.low]);
-  const minP = Math.min(...prices);
-  const maxP = Math.max(...prices);
-  const range = maxP - minP || 1;
-  const toY = p => PAD + (1 - (p - minP) / range) * (H - PAD * 2);
-
-  const cW = (W - PAD * 2) / candles.length;
-  const wickX = (i) => PAD + i * cW + cW / 2;
-
-  const isBull = c => c.close >= c.open;
-  const patType = pattern?.type || 'neutral';
-  const lastIdx = candles.length - 1;
-
-  let rects = '', wicks = '';
-  candles.forEach((c, i) => {
-    const bull = isBull(c);
-    const bodyTop = toY(Math.max(c.open, c.close));
-    const bodyBot = toY(Math.min(c.open, c.close));
-    const bodyH = Math.max(1, bodyBot - bodyTop);
-    const bX = PAD + i * cW + cW * 0.15;
-    const bW = cW * 0.7;
-    const wx = wickX(i);
-    const isLast = i === lastIdx;
-
-    // Colors: last candle highlighted by pattern type, rest dimmed
-    let fill, stroke;
-    if (isLast) {
-      fill = patType === 'bull' ? '#34d399' : patType === 'bear' ? '#f87171' : '#f59e0b';
-      stroke = fill;
-    } else {
-      fill = bull ? 'rgba(52,211,153,0.35)' : 'rgba(248,113,113,0.35)';
-      stroke = bull ? 'rgba(52,211,153,0.6)' : 'rgba(248,113,113,0.6)';
-    }
-
-    wicks += `<line x1="${wx}" y1="${toY(c.high)}" x2="${wx}" y2="${toY(c.low)}" stroke="${stroke}" stroke-width="1"/>`;
-    rects += `<rect x="${bX}" y="${bodyTop}" width="${bW}" height="${bodyH}" fill="${fill}" rx="0.5"/>`;
-  });
-
-  return `<svg viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" xmlns="http://www.w3.org/2000/svg" style="display:block">
-    <rect width="${W}" height="${H}" fill="#0d1117" rx="3"/>
-    ${wicks}${rects}
-  </svg>`;
-}
-
-async function pollCandles() {
-  try {
-    const res = await fetch('/analyst-candles');
-    const data = await res.json();
-    const inner = document.getElementById('pattern-inner');
-    const empty = document.getElementById('pattern-empty');
-
-    if (!data.candles?.length) return;
-
-    const svgHtml = buildCandleSVG(data.candles, data.pattern);
-    document.getElementById('pattern-svg-wrap').innerHTML = svgHtml;
-
-    if (data.pattern) {
-      const col = data.pattern.type === 'bull' ? 'var(--green)'
-                : data.pattern.type === 'bear' ? 'var(--red)'
-                : 'var(--amber)';
-      document.getElementById('pattern-name').textContent = data.pattern.name;
-      document.getElementById('pattern-name').style.color = col;
-      document.getElementById('pattern-desc').textContent = data.pattern.desc;
-    } else {
-      document.getElementById('pattern-name').textContent = 'No pattern';
-      document.getElementById('pattern-desc').textContent = 'Standard candle forming';
-    }
-
-    inner.style.display = 'flex';
-    empty.style.display = 'none';
-  } catch(e) {}
-}
-
-// ── POLL ANALYST FEED ──────────────────────────────────────────
-async function pollFeed() {
-  try {
-    const res = await fetch('/analyst-feed');
-    const data = await res.json();
-    if (!data.feed?.length) return;
-    const latest = data.feed[0];
-
-    // Header update
-    if (latest.price) {
-      marketCtx = latest;
-      currentPrice = parseFloat(latest.price);
-      document.getElementById('pv').textContent = '$'+Number(latest.price).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2});
-      const bEl = document.getElementById('bv');
-      bEl.textContent = (latest.bias||'—').toUpperCase();
-      bEl.style.color = latest.bias==='bull'?'var(--green)':latest.bias==='bear'?'var(--red)':'var(--dim)';
-      const sc = latest.bias==='bull'?latest.bull_score:latest.bear_score;
-      document.getElementById('sv').textContent = (sc||'—')+'/5';
-      document.getElementById('evv').textContent = (latest.event_type||'').replace(/_/g,' ').toUpperCase();
-      document.getElementById('pip').style.background = 'var(--green)';
-      // Re-render levels with updated price
-      renderLevelsLadder();
-    }
-
-    if (latest.timestamp !== lastFeedTs) {
-      lastFeedTs = latest.timestamp;
-
-      // [1] Session banner event — render as banner, NOT as obs
-      if (latest.event_type === 'session_banner') {
-        prependFeed(buildSessionBanner(latest), 'system');
-        // Update topbar
-        document.getElementById('sesv').textContent = latest.session_label;
-        return;
-      }
-
-      // Regular signal tweet
-      const tweet = buildTweet(latest);
-      const c = cfg(latest.event_type);
-      prependFeed(tweet, c.cat);
-
-      // [3] Obs — only signal/level events, NOT session banners
-      if (latest.commentary) addObs(latest.commentary, 'signal', latest.price);
-
-      // Levels
-      if (latest.event_type === 'levels_analysis') {
-        updateLevels({
-          high72h: latest.high72h, low72h: latest.low72h,
-          weekHigh: latest.weekHigh, weekLow: latest.weekLow,
-          equalHighs: latest.equalHighs, equalLows: latest.equalLows,
-          currentPrice: latest.price
+// [1] Check if session changed and emit a banner feed entry if so
+function checkSessionBanner() {
+    const s = getSession();
+    if (s.label !== currentSessionLabel) {
+        currentSessionLabel = s.label;
+        sessionInjectedInPrompt = false; // allow one-time injection into next auto prompt
+        // Emit session banner into the feed — client renders this as a banner card
+        addToFeed({
+            event_type: 'session_banner',
+            session_label: s.label,
+            session_desc: s.desc,
+            session_cls: s.cls,
+            session_icon: s.icon,
+            timestamp: new Date().toISOString()
         });
-      }
     }
-  } catch(e) {
-    document.getElementById('pip').style.background = 'var(--red)';
-  }
 }
 
-// ── POLL LEVELS ────────────────────────────────────────────────
-async function pollLevels() {
-  try {
-    const res = await fetch('/analyst-levels');
-    const data = await res.json();
-    if (data.levels) updateLevels({...data.levels, currentPrice: data.levels.currentPrice});
-  } catch(e) {}
+// Run session check every 60s
+setInterval(checkSessionBanner, 60000);
+
+// ── FETCH HISTORICAL CANDLES ──────────────────────────────────
+async function fetchKlines(interval, limit) {
+    const urls = [
+        `https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval=${interval}&limit=${limit}`,
+        `https://api1.binance.com/api/v3/klines?symbol=BTCUSDT&interval=${interval}&limit=${limit}`,
+    ];
+    for (const url of urls) {
+        try {
+            const r = await fetch(url, { signal: AbortSignal.timeout(8000) });
+            if (!r.ok) continue;
+            const d = await r.json();
+            if (Array.isArray(d) && d.length > 0) return d;
+        } catch(e) { continue; }
+    }
+    return null;
 }
 
-// ── POLL TRADE ─────────────────────────────────────────────────
-async function pollTrade() {
-  try {
-    const res = await fetch('/api/trades');
-    const data = await res.json();
-    if (data.open) {
-      const t = data.open;
-      const price = currentPrice || parseFloat(t.entry_price);
-      const pts = t.direction==='Long' ? price-t.entry_price : t.entry_price-price;
-      const pnl = (pts*(t.ppp||1)*(t.size||1)).toFixed(2);
-      const dur = Math.round((Date.now()-t.entry_time)/1000);
-      const durStr = dur<60?dur+'s':Math.floor(dur/60)+'m '+dur%60+'s';
-      updateTradePanel({
-        direction:t.direction,
-        entry:parseFloat(t.entry_price).toFixed(2),
-        currentPrice:price.toFixed(2),
-        points:pts.toFixed(1),
+// ── FETCH RECENT CANDLES FOR PATTERN DETECTION ────────────────
+async function fetchRecentCandles() {
+    // 30 x 1m candles for pattern detection on the chart
+    return await fetchKlines('1m', 30);
+}
+
+// ── DETECT CANDLE PATTERN ─────────────────────────────────────
+function detectCandlePattern(candles) {
+    if (!candles || candles.length < 3) return null;
+    const c = candles.slice(-3).map(k => ({
+        open:  parseFloat(k[1]),
+        high:  parseFloat(k[2]),
+        low:   parseFloat(k[3]),
+        close: parseFloat(k[4]),
+    }));
+    const last = c[2];
+    const prev = c[1];
+    const body = Math.abs(last.close - last.open);
+    const range = last.high - last.low;
+    const upperWick = last.high - Math.max(last.open, last.close);
+    const lowerWick = Math.min(last.open, last.close) - last.low;
+    const isBull = last.close > last.open;
+
+    // Doji
+    if (body < range * 0.1) {
+        return { name: 'Doji', type: 'neutral', desc: 'Indecision — market pausing' };
+    }
+    // Pin bar / hammer (long lower wick, small body at top)
+    if (lowerWick > body * 2 && upperWick < body * 0.5 && lowerWick > upperWick * 2) {
+        return { name: 'Pin Bar', type: 'bull', desc: 'Rejection of lows — potential reversal up' };
+    }
+    // Shooting star (long upper wick, small body at bottom)
+    if (upperWick > body * 2 && lowerWick < body * 0.5 && upperWick > lowerWick * 2) {
+        return { name: 'Shooting Star', type: 'bear', desc: 'Rejection of highs — potential reversal down' };
+    }
+    // Engulfing bull
+    if (isBull && last.close > prev.open && last.open < prev.close && prev.close < prev.open) {
+        return { name: 'Bullish Engulf', type: 'bull', desc: 'Full engulf of prior bearish candle' };
+    }
+    // Engulfing bear
+    if (!isBull && last.close < prev.open && last.open > prev.close && prev.close > prev.open) {
+        return { name: 'Bearish Engulf', type: 'bear', desc: 'Full engulf of prior bullish candle' };
+    }
+    // Inside bar
+    if (last.high < prev.high && last.low > prev.low) {
+        return { name: 'Inside Bar', type: 'neutral', desc: 'Compression — breakout incoming' };
+    }
+    // Strong bull candle
+    if (isBull && body > range * 0.7) {
+        return { name: 'Strong Bull', type: 'bull', desc: 'Clean momentum candle — buyers in control' };
+    }
+    // Strong bear candle
+    if (!isBull && body > range * 0.7) {
+        return { name: 'Strong Bear', type: 'bear', desc: 'Clean momentum candle — sellers in control' };
+    }
+    return { name: isBull ? 'Bullish' : 'Bearish', type: isBull ? 'bull' : 'bear', desc: 'Standard candle' };
+}
+
+// ── ANALYSE HISTORICAL LEVELS ─────────────────────────────────
+function analyseCandles(candles1h, candles1d) {
+    if (!candles1h || !candles1h.length) return null;
+
+    const closes1h = candles1h.map(c => parseFloat(c[4]));
+    const currentPrice = closes1h[closes1h.length - 1];
+
+    const recent72h = candles1h.slice(-72);
+    const recent24h = candles1h.slice(-24);
+    const recent48h = candles1h.slice(-48);
+
+    const high72h = Math.max(...recent72h.map(c => parseFloat(c[2])));
+    const low72h  = Math.min(...recent72h.map(c => parseFloat(c[3])));
+    const high24h = Math.max(...recent24h.map(c => parseFloat(c[2])));
+    const low24h  = Math.min(...recent24h.map(c => parseFloat(c[3])));
+    const high48h = Math.max(...recent48h.map(c => parseFloat(c[2])));
+    const low48h  = Math.min(...recent48h.map(c => parseFloat(c[3])));
+
+    let weekHigh = null, weekLow = null;
+    if (candles1d && candles1d.length >= 7) {
+        const week = candles1d.slice(-7);
+        weekHigh = Math.max(...week.map(c => parseFloat(c[2])));
+        weekLow  = Math.min(...week.map(c => parseFloat(c[3])));
+    }
+
+    const tolerance = currentPrice * 0.001;
+    const significantHighs = [];
+    const significantLows  = [];
+    recent72h.forEach(c => {
+        const h = parseFloat(c[2]);
+        const l = parseFloat(c[3]);
+        if (recent72h.filter(x => Math.abs(parseFloat(x[2]) - h) < tolerance).length >= 2) significantHighs.push(h);
+        if (recent72h.filter(x => Math.abs(parseFloat(x[3]) - l) < tolerance).length >= 2) significantLows.push(l);
+    });
+    const equalHighs = [...new Set(significantHighs.map(h => Math.round(h)))].slice(0, 3);
+    const equalLows  = [...new Set(significantLows.map(l => Math.round(l)))].slice(0, 3);
+
+    const rangeSize = high48h - low48h;
+    const isRanging = rangeSize < currentPrice * 0.02;
+    const rangePos  = isRanging ? ((currentPrice - low48h) / rangeSize * 100).toFixed(0) : null;
+
+    const proximityThreshold = currentPrice * 0.003;
+    const nearLevels = [];
+    if (Math.abs(currentPrice - high72h) < proximityThreshold) nearLevels.push(`72h high at ${high72h.toFixed(0)}`);
+    if (Math.abs(currentPrice - low72h)  < proximityThreshold) nearLevels.push(`72h low at ${low72h.toFixed(0)}`);
+    if (weekHigh && Math.abs(currentPrice - weekHigh) < proximityThreshold) nearLevels.push(`weekly high at ${weekHigh.toFixed(0)}`);
+    if (weekLow  && Math.abs(currentPrice - weekLow)  < proximityThreshold) nearLevels.push(`weekly low at ${weekLow.toFixed(0)}`);
+    equalHighs.forEach(h => { if (Math.abs(currentPrice - h) < proximityThreshold * 2) nearLevels.push(`equal highs at ${h}`); });
+    equalLows.forEach(l  => { if (Math.abs(currentPrice - l) < proximityThreshold * 2) nearLevels.push(`equal lows at ${l}`); });
+
+    const open24h  = parseFloat(recent24h[0][1]);
+    const close24h = parseFloat(recent24h[recent24h.length-1][4]);
+    const trend24h = close24h > open24h ? 'bullish' : 'bearish';
+    const change24h = ((close24h - open24h) / open24h * 100).toFixed(2);
+
+    return {
+        currentPrice: currentPrice.toFixed(2),
+        high72h: high72h.toFixed(0),
+        low72h:  low72h.toFixed(0),
+        high24h: high24h.toFixed(0),
+        low24h:  low24h.toFixed(0),
+        weekHigh: weekHigh?.toFixed(0),
+        weekLow:  weekLow?.toFixed(0),
+        equalHighs,
+        equalLows,
+        isRanging,
+        rangeHigh: high48h.toFixed(0),
+        rangeLow:  low48h.toFixed(0),
+        rangePos,
+        nearLevels,
+        trend24h,
+        change24h,
+    };
+}
+
+function buildLevelsPrompt(analysis) {
+    const { currentPrice, high72h, low72h, high24h, low24h, weekHigh, weekLow,
+            equalHighs, equalLows, isRanging, rangeHigh, rangeLow, rangePos,
+            nearLevels, trend24h, change24h } = analysis;
+    return `HISTORICAL ANALYSIS REQUEST:
+Current price: $${currentPrice}
+24h trend: ${trend24h} (${change24h}%)
+72h range: High ${high72h} / Low ${low72h}
+24h range: High ${high24h} / Low ${low24h}
+${weekHigh ? `Weekly range: High ${weekHigh} / Low ${weekLow}` : ''}
+${equalHighs.length ? `Equal highs: ${equalHighs.join(', ')}` : ''}
+${equalLows.length  ? `Equal lows: ${equalLows.join(', ')}` : ''}
+${isRanging ? `Ranging: ${rangeLow} to ${rangeHigh}, price at ${rangePos}% of range` : 'Trending — not ranging'}
+${nearLevels.length ? `NEAR KEY LEVELS NOW: ${nearLevels.join(', ')}` : 'Not near a major level'}
+
+Give a proactive levels observation. Vary the length — sometimes one punchy sentence is enough. Sometimes 2-3 if there's a lot to say. Plain text only. Be specific with prices.`;
+}
+
+function buildHistoricalChatPrompt(message, analysis) {
+    if (!analysis) return message;
+    const { currentPrice, high72h, low72h, high24h, low24h, weekHigh, weekLow,
+            equalHighs, equalLows, isRanging, rangeHigh, rangeLow, rangePos,
+            trend24h, change24h, nearLevels } = analysis;
+    return `HISTORICAL DATA (last 7 days from Binance):
+Price: $${currentPrice} | 24h: ${trend24h} ${change24h}%
+72h: High ${high72h} / Low ${low72h}
+24h: High ${high24h} / Low ${low24h}
+${weekHigh ? `Weekly: High ${weekHigh} / Low ${weekLow}` : ''}
+${equalHighs.length ? `Equal highs: ${equalHighs.join(', ')}` : ''}
+${equalLows.length  ? `Equal lows: ${equalLows.join(', ')}` : ''}
+${isRanging ? `Ranging: ${rangeLow} to ${rangeHigh} (${rangePos}%)` : 'Trending — not ranging'}
+${nearLevels.length ? `Near key levels: ${nearLevels.join(', ')}` : ''}
+
+User question: ${message}
+
+Answer as Santosh using this real historical data. Be specific with prices. Plain text, vary length.`;
+}
+
+async function runHistoricalAnalysis() {
+    try {
+        console.log('[Santosh] Running historical analysis...');
+        const [candles1h, candles1d] = await Promise.all([
+            fetchKlines('1h', 168),
+            fetchKlines('1d', 30),
+        ]);
+        if (!candles1h) { console.log('[Santosh] Could not fetch historical data'); return; }
+
+        const analysis = analyseCandles(candles1h, candles1d);
+        cachedLevels = analysis;
+        lastLevelsTime = Date.now();
+
+        const response = await client.messages.create({
+            model: 'claude-haiku-4-5',
+            max_tokens: 120,
+            system: SANTOSH_SYSTEM,
+            messages: [{ role: 'user', content: buildLevelsPrompt(analysis) }]
+        });
+
+        const commentary = response.content[0].text.replace(/\*\*/g,'').replace(/\*/g,'');
+        addToFeed({
+            commentary,
+            price: analysis.currentPrice,
+            event_type: 'levels_analysis',
+            high72h: analysis.high72h,
+            low72h: analysis.low72h,
+            weekHigh: analysis.weekHigh,
+            weekLow: analysis.weekLow,
+            equalHighs: analysis.equalHighs,
+            equalLows: analysis.equalLows,
+            nearLevels: analysis.nearLevels,
+            isRanging: analysis.isRanging,
+            rangeHigh: analysis.rangeHigh,
+            rangeLow: analysis.rangeLow,
+            timestamp: new Date().toISOString()
+        });
+        console.log('[Santosh] Historical analysis complete');
+    } catch(err) {
+        console.error('[Santosh] Historical analysis error:', err.message);
+    }
+}
+
+// ── READ OPEN TRADE ───────────────────────────────────────────
+function getOpenTrade() {
+    try {
+        const DB = process.env.DB_PATH || path.join(__dirname, 'trades.json');
+        if (!fs.existsSync(DB)) return null;
+        const db = JSON.parse(fs.readFileSync(DB, 'utf8'));
+        return db.trades.find(t => t.status === 'open') || null;
+    } catch(e) { return null; }
+}
+
+function buildOpenTradeContext(trade, currentPrice) {
+    if (!trade) return null;
+    const price = parseFloat(currentPrice);
+    const entry = parseFloat(trade.entry_price);
+    const dir = trade.direction;
+    const pts = dir === 'Long' ? price - entry : entry - price;
+    const pnl = (pts * (trade.ppp||1) * (trade.size||1)).toFixed(2);
+    const inProfit = pts > 0;
+    const durSec = Math.round((Date.now() - trade.entry_time) / 1000);
+    const durStr = durSec < 60 ? `${durSec}s` : `${Math.floor(durSec/60)}m ${durSec%60}s`;
+    return {
+        direction: dir,
+        entry: entry.toFixed(2),
+        currentPrice: price.toFixed(2),
+        points: pts.toFixed(1),
         pnl,
-        inProfit:pts>0,
-        duration:durStr
-      });
-    } else {
-      updateTradePanel(null);
+        inProfit,
+        duration: durStr,
+        size: trade.size,
+        summary: `OPEN TRADE: ${dir} from $${entry.toFixed(2)} | Now $${price.toFixed(2)} | ${inProfit?'+':''}${pts.toFixed(1)} pts | P&L ${inProfit?'+':''}$${pnl} | In trade ${durStr}`
+    };
+}
+
+// [1] Build auto prompt — session context suppressed after first injection per session change
+function buildAutoPrompt(amn, dash) {
+    const zone = amn.zone_active
+        ? `AMN zone: ${amn.zone_type} | midline ${amn.zone_mid} | TP ${amn.tp_level} | SL ${amn.sl_level}`
+        : 'No confirmed zone';
+    const sweep = amn.sweep_direction !== 'none' ? `Sweep: ${amn.sweep_direction}` : '';
+    const choch = amn.choch ? `CHoCH: ${amn.choch_direction}` : '';
+    const taps = amn.tap_count > 0 ? `Taps: ${amn.tap_count}/${amn.min_taps}` : '';
+    const dashLine = dash ? `Dashboard (reference): ${dash.bull_score}/7 bull ${dash.bear_score}/7 bear` : '';
+
+    const openTrade = getOpenTrade();
+    const tradeCtx = openTrade ? buildOpenTradeContext(openTrade, amn.price) : null;
+    const tradeLine = tradeCtx ? tradeCtx.summary : 'No open trade';
+
+    let levelsCtx = '';
+    if (cachedLevels) {
+        const { high72h, low72h, equalHighs, equalLows, nearLevels, isRanging, rangeHigh, rangeLow } = cachedLevels;
+        levelsCtx = `Historical context: 72h High ${high72h} / Low ${low72h}`;
+        if (nearLevels && nearLevels.length) levelsCtx += ` | NEAR: ${nearLevels.join(', ')}`;
+        if (isRanging) levelsCtx += ` | Ranging ${rangeLow}-${rangeHigh}`;
+        if (equalHighs && equalHighs.length) levelsCtx += ` | Equal highs: ${equalHighs.join(', ')}`;
+        if (equalLows && equalLows.length) levelsCtx += ` | Equal lows: ${equalLows.join(', ')}`;
     }
-  } catch(e) {}
+
+    return `Signal: ${amn.event_type?.replace(/_/g,' ').toUpperCase()}
+Price: $${amn.price} | EMA: ${amn.ema_trend} | RSI: ${amn.rsi}
+HTF: ${amn.bias} (${amn.bull_votes}/3 bull, ${amn.bear_votes}/3 bear)
+${zone}
+${[sweep, choch, taps].filter(Boolean).join(' | ')}
+${levelsCtx}
+${tradeLine}
+${dashLine}
+
+${tradeCtx
+    ? 'PRIORITY: Trader is in a live trade. Lead with advice on managing it. Then comment on the signal.'
+    : 'Respond as Santosh. Focus on price action, candle behaviour, key levels. Do NOT mention the session or time of day.'}
+Plain text only. Vary your length — sometimes one sentence is right, sometimes 2-3.`;
 }
 
-// ── POLL NEWS ──────────────────────────────────────────────────
-async function pollNews() {
-  try {
-    const res = await fetch('/api/intel');
-    const data = await res.json();
-    if (!data.items?.length) return;
+function buildDashPrompt(dash) {
+    return `Dashboard: ${dash.bull_score}/7 bull ${dash.bear_score}/7 bear
+Sweep: ${dash.liq_sweep} | Price: $${dash.price}
+${cachedLevels ? `Key levels: 72h High ${cachedLevels.high72h} / Low ${cachedLevels.low72h}` : ''}
 
-    if (!newsLoaded) {
-      newsLoaded = true;
-      lastNewsTs = Math.max(...data.items.map(i=>new Date(i.pubDate||Date.now()).getTime()));
-      const toShow = data.items.filter(i=>(i.score||1)>=2).slice(0,8);
-      toShow.reverse().forEach(item=>{
-        prependFeed(buildNewsTweet(item), 'news');
-        if ((item.score||1)>=4) addObs(item.headline, 'news', null);
-      });
-    } else {
-      const newItems = data.items.filter(i=>{
-        const t = new Date(i.pubDate||Date.now()).getTime();
-        return t>lastNewsTs && (i.score||1)>=2;
-      });
-      if (newItems.length) {
-        lastNewsTs = Math.max(...newItems.map(i=>new Date(i.pubDate||Date.now()).getTime()));
-        newItems.slice(0,3).forEach(item=>{
-          prependFeed(buildNewsTweet(item),'news');
-          if ((item.score||1)>=4) addObs(item.headline,'news',null);
-        });
-      }
-    }
-    document.getElementById('tick-inner').textContent =
-      data.items.slice(0,10).map(i=>`${i.source}: ${i.headline}`).join('   ·   ');
-  } catch(e){}
+Only speak if score hit 6+ or sweep fired AND session is active. If quiet, respond: quiet
+Plain text. Do NOT mention session or time of day in your commentary.`;
 }
 
-// ── CHAT ───────────────────────────────────────────────────────
-function appendMsg(role, name, text) {
-  const c = document.getElementById('chat-msgs');
-  const d = document.createElement('div');
-  d.className = `msg ${role}`;
-  d.innerHTML = `<span class="mn">${name}</span><div class="mb">${text}</div>`;
-  c.appendChild(d);
-  c.scrollTop = c.scrollHeight;
+function buildPostTradePrompt(trade, amn, dash) {
+    const won = trade.pnl > 0;
+    const dur = Math.round((trade.exit_time - trade.entry_time) / 1000);
+    const durStr = dur < 60 ? `${dur}s` : `${Math.floor(dur/60)}m${dur%60}s`;
+    return `Trade closed: ${won?'WIN':'LOSS'} | ${trade.direction} | entry $${trade.entry_price} exit $${trade.exit_price} | ${trade.points?.toFixed(1)}pts | ${won?'+':''}$${trade.pnl?.toFixed(2)} | held ${durStr}
+Market: $${amn?.price} | EMA ${amn?.ema_trend} | RSI ${amn?.rsi}
+${cachedLevels ? `Key levels: 72h High ${cachedLevels.high72h} / Low ${cachedLevels.low72h}` : ''}
+
+Honest debrief as Santosh. Focus on execution quality and whether the entry respected key levels. Plain text. 2-3 sentences.`;
 }
 
-async function sendMsg() {
-  const inp = document.getElementById('chat-input');
-  const msg = inp.value.trim();
-  if (!msg||isWaiting) return;
-  inp.value = ''; isWaiting = true;
-  document.getElementById('send-btn').disabled = true;
-  appendMsg('user','You',msg);
-  const tel = document.createElement('div');
-  tel.className='msg bot'; tel.id='tel';
-  tel.innerHTML=`<span class="mn">Santosh</span><div class="typing"><div class="td"></div><div class="td"></div><div class="td"></div></div>`;
-  document.getElementById('chat-msgs').appendChild(tel);
-  document.getElementById('chat-msgs').scrollTop=99999;
-  try {
-    const res = await fetch('/analyst-chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({message:msg,sessionId:SID,marketContext:marketCtx})});
-    const data = await res.json();
-    tel.remove();
-    appendMsg('bot','Santosh',data.reply||'Something went wrong.');
-  } catch(e) { tel.remove(); appendMsg('bot','Santosh','Lost connection.'); }
-  isWaiting=false;
-  document.getElementById('send-btn').disabled=false;
-  inp.focus();
-}
+module.exports = function(app) {
 
-document.getElementById('send-btn').addEventListener('click',sendMsg);
-document.getElementById('chat-input').addEventListener('keydown',e=>{
-  if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendMsg();}
-});
+    // POST /analyst — AMN signal webhook
+    app.post('/analyst', async (req, res) => {
+        try {
+            const now = Date.now();
+            latestAMNData = req.body;
+            checkSessionBanner(); // [1] check if session changed, emit banner if so
+            if (now - lastCallTime < RATE_LIMIT_MS) return res.json({ skipped: true });
+            lastCallTime = now;
 
-// ── START ──────────────────────────────────────────────────────
-pollFeed();
-pollNews();
-pollLevels();
-pollTrade();
-pollCandles();
-setInterval(pollFeed, 3000);
-setInterval(pollNews, 30000);
-setInterval(pollTrade, 3000);
-setInterval(pollLevels, 5*60*1000);
-setInterval(pollCandles, 15000); // [4] refresh candle sketch every 15s
-</script>
-</body>
-</html>
+            const response = await client.messages.create({
+                model: 'claude-haiku-4-5',
+                max_tokens: 90,
+                system: SANTOSH_SYSTEM,
+                messages: [{ role: 'user', content: buildAutoPrompt(req.body, latestDashData) }]
+            });
+
+            const commentary = response.content[0].text.replace(/\*\*/g,'').replace(/\*/g,'');
+            addToFeed({
+                commentary,
+                price: req.body.price,
+                bias: req.body.bias,
+                bull_score: req.body.bull_votes,
+                bear_score: req.body.bear_votes,
+                event_type: req.body.event_type,
+                zone_active: req.body.zone_active,
+                zone_type: req.body.zone_type,
+                zone_mid: req.body.zone_mid,
+                tp_level: req.body.tp_level,
+                sl_level: req.body.sl_level,
+                timestamp: req.body.timestamp || new Date().toISOString()
+            });
+            res.json({ commentary, success: true });
+        } catch (err) {
+            console.error('Analyst error:', err.message);
+            res.status(500).json({ error: err.message });
+        }
+    });
+
+    // POST /analyst-dashboard
+    app.post('/analyst-dashboard', async (req, res) => {
+        try {
+            latestDashData = req.body;
+            const now = Date.now();
+            const significant = req.body.bull_score >= 6 || req.body.bear_score >= 6 ||
+                (req.body.liq_sweep && req.body.liq_sweep !== 'none' && req.body.liq_sweep !== '0');
+            if (!significant || now - lastCallTime < RATE_LIMIT_MS) return res.json({ skipped: true });
+            lastCallTime = now;
+
+            const response = await client.messages.create({
+                model: 'claude-haiku-4-5',
+                max_tokens: 75,
+                system: SANTOSH_SYSTEM,
+                messages: [{ role: 'user', content: buildDashPrompt(req.body) }]
+            });
+
+            const commentary = response.content[0].text.replace(/\*\*/g,'').replace(/\*/g,'');
+            if (commentary.toLowerCase().trim() === 'quiet' || commentary.length < 10) return res.json({ skipped: true });
+
+            addToFeed({
+                commentary,
+                price: req.body.price,
+                bias: req.body.bull_score > req.body.bear_score ? 'bull' : 'bear',
+                bull_score: req.body.bull_score,
+                bear_score: req.body.bear_score,
+                event_type: 'dashboard_update',
+                timestamp: new Date().toISOString()
+            });
+            res.json({ commentary, success: true });
+        } catch (err) {
+            res.status(500).json({ error: err.message });
+        }
+    });
+
+    // GET /analyst-feed
+    app.get('/analyst-feed', (req, res) => res.json({ feed: commentaryFeed }));
+
+    // GET /analyst-levels
+    app.get('/analyst-levels', (req, res) => res.json({ levels: cachedLevels, lastUpdated: lastLevelsTime }));
+
+    // GET /analyst-candles — [4] recent 1m candles + detected pattern for client SVG
+    app.get('/analyst-candles', async (req, res) => {
+        try {
+            const candles = await fetchRecentCandles();
+            if (!candles) return res.json({ candles: [], pattern: null });
+            const pattern = detectCandlePattern(candles);
+            // Return last 8 candles for mini chart
+            const mini = candles.slice(-8).map(k => ({
+                open:  parseFloat(k[1]),
+                high:  parseFloat(k[2]),
+                low:   parseFloat(k[3]),
+                close: parseFloat(k[4]),
+            }));
+            res.json({ candles: mini, pattern });
+        } catch(err) {
+            res.json({ candles: [], pattern: null });
+        }
+    });
+
+    // POST /analyst-chat
+    app.post('/analyst-chat', async (req, res) => {
+        try {
+            const { message, sessionId = 'default' } = req.body;
+            if (!message?.trim()) return res.status(400).json({ error: 'No message' });
+
+            if (!conversations[sessionId]) conversations[sessionId] = [];
+            const history = conversations[sessionId];
+
+            const amn = latestAMNData;
+            const dash = latestDashData;
+            const session = getSession();
+
+            const isHistoricalQ = /level|high|low|range|week|72|48|24|hour|day|support|resist|equal|pattern|repeat|historic|previous|past|where.*been|been.*where/i.test(message);
+
+            let userContent;
+            if (isHistoricalQ && cachedLevels) {
+                userContent = buildHistoricalChatPrompt(message, cachedLevels);
+            } else {
+                const z = amn?.zone_active ? ` | ${amn.zone_type} zone midline ${amn.zone_mid} TP ${amn.tp_level} SL ${amn.sl_level}` : '';
+                const d = dash ? ` | Dashboard ${dash.bull_score}/7 bull ${dash.bear_score}/7 bear` : '';
+                const lvl = cachedLevels ? ` | 72h High ${cachedLevels.high72h} Low ${cachedLevels.low72h}` : '';
+                const openTrade = getOpenTrade();
+                const tradeCtx = openTrade ? buildOpenTradeContext(openTrade, amn?.price) : null;
+                const trd = tradeCtx ? ` | ${tradeCtx.summary}` : '';
+                // For chat, include session as useful context (user asking questions)
+                userContent = `[Chart: $${amn?.price||'?'} | ${amn?.bias||'?'} ${amn?.bull_votes||0}/3 HTF | EMA ${amn?.ema_trend||'?'} | RSI ${amn?.rsi||'?'}${z}${d}${lvl}${trd} | Session: ${session.label}]\n${message}`;
+            }
+
+            history.push({ role: 'user', content: userContent });
+            while (history.length > MAX_HISTORY * 2) history.shift();
+
+            const response = await client.messages.create({
+                model: 'claude-haiku-4-5',
+                max_tokens: 150,
+                system: SANTOSH_SYSTEM,
+                messages: history
+            });
+
+            const reply = response.content[0].text.replace(/\*\*/g,'').replace(/\*/g,'');
+            history.push({ role: 'assistant', content: reply });
+            res.json({ reply, success: true });
+        } catch (err) {
+            res.status(500).json({ error: err.message });
+        }
+    });
+
+    // POST /analyst-debrief/:id
+    app.post('/analyst-debrief/:id', async (req, res) => {
+        try {
+            const DB = process.env.DB_PATH || path.join(__dirname, 'trades.json');
+            const db = JSON.parse(fs.readFileSync(DB, 'utf8'));
+            const trade = db.trades.find(t => t.id === parseInt(req.params.id));
+            if (!trade) return res.status(404).json({ error: 'Trade not found' });
+
+            const response = await client.messages.create({
+                model: 'claude-haiku-4-5',
+                max_tokens: 130,
+                system: SANTOSH_SYSTEM,
+                messages: [{ role: 'user', content: buildPostTradePrompt(trade, latestAMNData, latestDashData) }]
+            });
+
+            const debrief = response.content[0].text.replace(/\*\*/g,'').replace(/\*/g,'');
+            const idx = db.trades.findIndex(t => t.id === parseInt(req.params.id));
+            db.trades[idx].santosh_debrief = debrief;
+            db.trades[idx].debrief_time = Date.now();
+            fs.writeFileSync(DB, JSON.stringify(db, null, 2));
+
+            addToFeed({
+                commentary: `Debrief: ${debrief}`,
+                price: latestAMNData?.price,
+                event_type: 'debrief',
+                timestamp: new Date().toISOString()
+            });
+            res.json({ debrief, success: true });
+        } catch (err) {
+            res.status(500).json({ error: err.message });
+        }
+    });
+
+    // [5] POST /analyst-register-trade — Chrome extension auto-registers open trade
+    // Writes directly into main trades.json with cTrader position ID as ctrader_id field
+    // Also closes any existing stale open trade first
+    app.post('/analyst-register-trade', (req, res) => {
+        try {
+            const DB = process.env.DB_PATH || path.join(__dirname, 'trades.json');
+            let db = { trades: [], executions: [], nextId: 1 };
+            if (fs.existsSync(DB)) db = JSON.parse(fs.readFileSync(DB, 'utf8'));
+
+            const incoming = req.body;
+            if (!incoming.id || !incoming.direction || !incoming.entry_price) {
+                return res.status(400).json({ error: 'Missing required fields: id, direction, entry_price' });
+            }
+
+            const ctraderId = String(incoming.id);
+
+            // Already registered and still open — idempotent
+            const existing = db.trades.find(t => t.ctrader_id === ctraderId && t.status === 'open');
+            if (existing) {
+                return res.json({ status: 'already_registered', trade: existing });
+            }
+
+            // Close any stale open trade (from old session / manual entry)
+            const staleIdx = db.trades.findIndex(t => t.status === 'open');
+            if (staleIdx >= 0) {
+                db.trades[staleIdx].status = 'cancelled';
+                console.log(`[Santosh] Cancelled stale open trade id=${db.trades[staleIdx].id}`);
+            }
+
+            // Write new open trade into main trades.json
+            const trade = {
+                id: db.nextId++,
+                ctrader_id: ctraderId,
+                direction: incoming.direction,
+                entry_price: parseFloat(incoming.entry_price),
+                entry_time: incoming.entry_time || Date.now(),
+                exit_price: null,
+                exit_time: null,
+                size: parseFloat(incoming.size) || 0.01,
+                ppp: parseFloat(incoming.ppp) || 1,
+                points: null,
+                pnl: null,
+                status: 'open',
+                source: 'extension_auto'
+            };
+            db.trades.push(trade);
+            fs.writeFileSync(DB, JSON.stringify(db, null, 2));
+
+            addToFeed({
+                commentary: `${trade.direction} from $${trade.entry_price} — watching it.`,
+                price: String(trade.entry_price),
+                event_type: 'trade',
+                timestamp: new Date().toISOString()
+            });
+
+            console.log(`[Santosh] Trade registered: ${trade.direction} $${trade.entry_price} ctrader_id=${ctraderId}`);
+            res.json({ status: 'registered', trade });
+        } catch(err) {
+            console.error('[Santosh] Register trade error:', err.message);
+            res.status(500).json({ error: err.message });
+        }
+    });
+
+    // [5] POST /analyst-close-trade — Chrome extension closes trade when position closes
+    // Matches by ctrader_id field, falls back to numeric id
+    app.post('/analyst-close-trade', (req, res) => {
+        try {
+            const DB = process.env.DB_PATH || path.join(__dirname, 'trades.json');
+            if (!fs.existsSync(DB)) return res.status(404).json({ error: 'No trades DB' });
+            const db = JSON.parse(fs.readFileSync(DB, 'utf8'));
+
+            const ctraderIdStr = String(req.body.id);
+
+            // Match by ctrader_id first, then fall back to numeric id
+            let idx = db.trades.findIndex(t => t.ctrader_id === ctraderIdStr && t.status === 'open');
+            if (idx === -1) idx = db.trades.findIndex(t => String(t.id) === ctraderIdStr && t.status === 'open');
+            // Last resort: just close whatever is open
+            if (idx === -1) idx = db.trades.findIndex(t => t.status === 'open');
+            if (idx === -1) return res.status(404).json({ error: 'Open trade not found' });
+
+            const trade = db.trades[idx];
+            const exitPrice = parseFloat(req.body.exit_price) || parseFloat(latestAMNData?.price) || trade.entry_price;
+            const pts = trade.direction === 'Long' ? exitPrice - trade.entry_price : trade.entry_price - exitPrice;
+            db.trades[idx] = {
+                ...trade,
+                status: 'closed',
+                exit_price: exitPrice,
+                exit_time: req.body.exit_time || Date.now(),
+                points: pts,
+                pnl: pts * trade.ppp * trade.size
+            };
+            fs.writeFileSync(DB, JSON.stringify(db, null, 2));
+
+            console.log(`[Santosh] Trade closed: ctrader_id=${ctraderIdStr} exit=$${exitPrice} pts=${pts.toFixed(1)}`);
+            res.json({ status: 'closed', trade: db.trades[idx] });
+        } catch(err) {
+            res.status(500).json({ error: err.message });
+        }
+    });
+
+    app.get('/analyst-chat', (req, res) => res.sendFile('analyst.html', { root: './public' }));
+
+    // Scheduled historical analysis
+    setTimeout(runHistoricalAnalysis, 5000);
+    setInterval(runHistoricalAnalysis, 30 * 60 * 1000);
+
+    // Initial session check
+    checkSessionBanner();
+
+    console.log('✅ Santosh v9 loaded');
+};
