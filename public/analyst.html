@@ -715,27 +715,18 @@ async function pollLevels() {
 // ── POLL TRADE ─────────────────────────────────────────────────
 async function pollTrade() {
   try {
-    // Fetch BB live price (most accurate), trade status, and Binance as fallback
-    const [tradeRes, bbPriceRes] = await Promise.allSettled([
+    // Fetch trade status and live price in parallel
+    const [tradeRes, priceRes] = await Promise.allSettled([
       fetch('/api/trades'),
-      fetch('/analyst-bb-price')
+      fetch('https://api.binance.com/api/v3/ticker/price?symbol=BTCUSDT')
     ]);
-    // Prefer BlackBull price (direct from cTrader feed), fall back to Binance
-    if (bbPriceRes.status === 'fulfilled') {
+    if (priceRes.status === 'fulfilled') {
       try {
-        const pd = await bbPriceRes.value.json();
+        const pd = await priceRes.value.json();
         if (pd.price) {
           currentPrice = parseFloat(pd.price);
           document.getElementById('pv').textContent = '$'+currentPrice.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2});
         }
-      } catch(e) {}
-    }
-    // Binance fallback if BB price not available
-    if (!currentPrice) {
-      try {
-        const br = await fetch('https://api.binance.com/api/v3/ticker/price?symbol=BTCUSDT');
-        const bd = await br.json();
-        if (bd.price) currentPrice = parseFloat(bd.price);
       } catch(e) {}
     }
     if (tradeRes.status !== 'fulfilled') return;
@@ -841,7 +832,7 @@ pollTrade();
 pollCandles();
 setInterval(pollFeed, 3000);
 setInterval(pollNews, 30000);
-setInterval(pollTrade, 3000);
+setInterval(pollTrade, 1000); // 1s for live P&L
 setInterval(pollLevels, 5*60*1000);
 setInterval(pollCandles, 15000); // [4] refresh candle sketch every 15s
 </script>
