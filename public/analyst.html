@@ -498,14 +498,14 @@ function updateTradePanel(tradeData) {
   tradeLive.style.display='flex';
   const isProfit = tradeData.inProfit;
   const col = isProfit?'var(--green)':'var(--red)';
+  const pts = parseFloat(tradeData.points);
   tradeLive.innerHTML = `
-    <div class="trade-dir td-${tradeData.direction==='Long'?'long':'short'}">${tradeData.direction==='Long'?'▲ LONG':'▼ SHORT'}</div>
+    <div class="trade-dir td-${tradeData.direction==='Long'?'long':'short'}">${tradeData.direction==='Long'?'▲ LONG':'▼ SHORT'} <span style="font-size:13px;color:${col};margin-left:8px">${isProfit?'+':''}${pts.toFixed(1)} pts</span></div>
     <div class="trade-stats">
       <div class="tstat"><div class="tstat-lbl">Entry</div><div class="tstat-val tv-neutral">$${tradeData.entry}</div></div>
-      <div class="tstat"><div class="tstat-lbl">Current</div><div class="tstat-val tv-neutral">$${tradeData.currentPrice}</div></div>
-      <div class="tstat"><div class="tstat-lbl">Points</div><div class="tstat-val" style="color:${col}">${isProfit?'+':''}${tradeData.points}</div></div>
-      <div class="tstat"><div class="tstat-lbl">P&L</div><div class="tstat-val" style="color:${col}">${isProfit?'+':''}$${tradeData.pnl}</div></div>
-      <div class="tstat" style="grid-column:span 2"><div class="tstat-lbl">Duration</div><div class="tstat-val tv-neutral">${tradeData.duration}</div></div>
+      <div class="tstat"><div class="tstat-lbl">Current</div><div class="tstat-val" style="color:${col}">$${tradeData.currentPrice}</div></div>
+      <div class="tstat"><div class="tstat-lbl">P&L</div><div class="tstat-val" style="color:${col};font-size:16px">${isProfit?'+':''}$${tradeData.pnl}</div></div>
+      <div class="tstat"><div class="tstat-lbl">Duration</div><div class="tstat-val tv-neutral">${tradeData.duration}</div></div>
     </div>`;
 }
 
