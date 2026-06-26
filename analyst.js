@@ -360,6 +360,15 @@ function getOpenTrade() {
     } catch(e) { return null; }
 }
 
+function getOpenTrades() {
+    try {
+        const DB = process.env.DB_PATH || path.join(__dirname, 'trades.json');
+        if (!fs.existsSync(DB)) return [];
+        const db = JSON.parse(fs.readFileSync(DB, 'utf8'));
+        return db.trades.filter(t => t.status === 'open');
+    } catch(e) { return []; }
+}
+
 function buildOpenTradeContext(trade, currentPrice) {
     if (!trade) return null;
     const price = parseFloat(currentPrice);
@@ -393,9 +402,12 @@ function buildAutoPrompt(amn, dash) {
     const taps = amn.tap_count > 0 ? `Taps: ${amn.tap_count}/${amn.min_taps}` : '';
     const dashLine = dash ? `Dashboard (reference): ${dash.bull_score}/7 bull ${dash.bear_score}/7 bear` : '';
 
-    const openTrade = getOpenTrade();
-    const tradeCtx = openTrade ? buildOpenTradeContext(openTrade, amn.price) : null;
-    const tradeLine = tradeCtx ? tradeCtx.summary : 'No open trade';
+    const openTrades = getOpenTrades();
+    const tradeCtxs = openTrades.map(t => buildOpenTradeContext(t, amn.price)).filter(Boolean);
+    const tradeLine = tradeCtxs.length > 0
+        ? tradeCtxs.map(t => t.summary).join(' | ')
+        : 'No open trade';
+    const tradeCtx = tradeCtxs[0] || null; // primary trade for priority logic
 
     let levelsCtx = '';
     if (cachedLevels) {
@@ -579,9 +591,10 @@ module.exports = function(app) {
                 const z = amn?.zone_active ? ` | ${amn.zone_type} zone midline ${amn.zone_mid} TP ${amn.tp_level} SL ${amn.sl_level}` : '';
                 const d = dash ? ` | Dashboard ${dash.bull_score}/7 bull ${dash.bear_score}/7 bear` : '';
                 const lvl = cachedLevels ? ` | 72h High ${cachedLevels.high72h} Low ${cachedLevels.low72h}` : '';
-                const openTrade = getOpenTrade();
-                const tradeCtx = openTrade ? buildOpenTradeContext(openTrade, amn?.price) : null;
-                const trd = tradeCtx ? ` | ${tradeCtx.summary}` : '';
+                const openTrades = getOpenTrades();
+                const trd = openTrades.length > 0
+                    ? ' | ' + openTrades.map(t => buildOpenTradeContext(t, amn?.price)?.summary).filter(Boolean).join(' | ')
+                    : '';
                 // For chat, include session as useful context (user asking questions)
                 userContent = `[Chart: $${amn?.price||'?'} | ${amn?.bias||'?'} ${amn?.bull_votes||0}/3 HTF | EMA ${amn?.ema_trend||'?'} | RSI ${amn?.rsi||'?'}${z}${d}${lvl}${trd} | Session: ${session.label}]\n${message}`;
             }
@@ -659,11 +672,13 @@ module.exports = function(app) {
                 return res.json({ status: 'already_registered', trade: existing });
             }
 
-            // Close any stale open trade (from old session / manual entry)
-            const staleIdx = db.trades.findIndex(t => t.status === 'open');
-            if (staleIdx >= 0) {
-                db.trades[staleIdx].status = 'cancelled';
-                console.log(`[Santosh] Cancelled stale open trade id=${db.trades[staleIdx].id}`);
+            // Allow up to 2 open trades — cancel oldest if already at limit
+            const openTrades = db.trades.filter(t => t.status === 'open');
+            if (openTrades.length >= 2) {
+                const oldest = openTrades.sort((a,b) => a.entry_time - b.entry_time)[0];
+                const oldestIdx = db.trades.findIndex(t => t.id === oldest.id);
+                db.trades[oldestIdx].status = 'cancelled';
+                console.log(`[Santosh] Max trades reached, cancelled oldest id=${oldest.id}`);
             }
 
             // Write new open trade into main trades.json
@@ -713,8 +728,8 @@ module.exports = function(app) {
             // Match by ctrader_id first, then fall back to numeric id
             let idx = db.trades.findIndex(t => t.ctrader_id === ctraderIdStr && t.status === 'open');
             if (idx === -1) idx = db.trades.findIndex(t => String(t.id) === ctraderIdStr && t.status === 'open');
-            // Last resort: just close whatever is open
-            if (idx === -1) idx = db.trades.findIndex(t => t.status === 'open');
+            // With multi-trade support, never use last resort — must match specific trade
+            // if (idx === -1) idx = db.trades.findIndex(t => t.status === 'open');
             if (idx === -1) return res.status(404).json({ error: 'Open trade not found' });
 
             const trade = db.trades[idx];
