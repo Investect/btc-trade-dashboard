@@ -623,62 +623,61 @@ module.exports = function(app) {
     });
 
     // [5] POST /analyst-register-trade — Chrome extension auto-registers open trade
-    // Extension POSTs this whenever it detects an open position from cTrader API
-    // Body: { id, direction, entry_price, size, ppp, entry_time, status: 'open' }
+    // Writes directly into main trades.json with cTrader position ID as ctrader_id field
+    // Also closes any existing stale open trade first
     app.post('/analyst-register-trade', (req, res) => {
         try {
             const DB = process.env.DB_PATH || path.join(__dirname, 'trades.json');
-            let db = { trades: [] };
-            if (fs.existsSync(DB)) {
-                db = JSON.parse(fs.readFileSync(DB, 'utf8'));
-            }
+            let db = { trades: [], executions: [], nextId: 1 };
+            if (fs.existsSync(DB)) db = JSON.parse(fs.readFileSync(DB, 'utf8'));
 
             const incoming = req.body;
             if (!incoming.id || !incoming.direction || !incoming.entry_price) {
                 return res.status(400).json({ error: 'Missing required fields: id, direction, entry_price' });
             }
 
-            // Check if already registered
-            const existing = db.trades.find(t => t.id === incoming.id);
+            const ctraderId = String(incoming.id);
+
+            // Already registered and still open — idempotent
+            const existing = db.trades.find(t => t.ctrader_id === ctraderId && t.status === 'open');
             if (existing) {
-                // Update if it was closed but extension says it's open (rare edge case)
-                if (existing.status === 'open') {
-                    return res.json({ status: 'already_registered', trade: existing });
-                }
+                return res.json({ status: 'already_registered', trade: existing });
             }
 
+            // Close any stale open trade (from old session / manual entry)
+            const staleIdx = db.trades.findIndex(t => t.status === 'open');
+            if (staleIdx >= 0) {
+                db.trades[staleIdx].status = 'cancelled';
+                console.log(`[Santosh] Cancelled stale open trade id=${db.trades[staleIdx].id}`);
+            }
+
+            // Write new open trade into main trades.json
             const trade = {
-                id: incoming.id,
+                id: db.nextId++,
+                ctrader_id: ctraderId,
                 direction: incoming.direction,
                 entry_price: parseFloat(incoming.entry_price),
-                size: parseFloat(incoming.size) || 1,
-                ppp: parseFloat(incoming.ppp) || 1,
                 entry_time: incoming.entry_time || Date.now(),
+                exit_price: null,
+                exit_time: null,
+                size: parseFloat(incoming.size) || 0.01,
+                ppp: parseFloat(incoming.ppp) || 1,
+                points: null,
+                pnl: null,
                 status: 'open',
                 source: 'extension_auto'
             };
-
-            if (existing) {
-                // Replace
-                const idx = db.trades.findIndex(t => t.id === incoming.id);
-                db.trades[idx] = trade;
-            } else {
-                db.trades.push(trade);
-            }
-
+            db.trades.push(trade);
             fs.writeFileSync(DB, JSON.stringify(db, null, 2));
 
-            // Emit a feed entry so Santosh acknowledges the trade
-            const price = latestAMNData?.price || trade.entry_price;
-            const tradeCtx = buildOpenTradeContext(trade, price);
             addToFeed({
-                commentary: `Trade registered: ${trade.direction} from $${trade.entry_price}. Watching it.`,
+                commentary: `${trade.direction} from $${trade.entry_price} — watching it.`,
                 price: String(trade.entry_price),
                 event_type: 'trade',
                 timestamp: new Date().toISOString()
             });
 
-            console.log(`[Santosh] Trade auto-registered: ${trade.direction} $${trade.entry_price} id=${trade.id}`);
+            console.log(`[Santosh] Trade registered: ${trade.direction} $${trade.entry_price} ctrader_id=${ctraderId}`);
             res.json({ status: 'registered', trade });
         } catch(err) {
             console.error('[Santosh] Register trade error:', err.message);
@@ -687,17 +686,24 @@ module.exports = function(app) {
     });
 
     // [5] POST /analyst-close-trade — Chrome extension closes trade when position closes
-    // Body: { id, exit_price, exit_time }
+    // Matches by ctrader_id field, falls back to numeric id
     app.post('/analyst-close-trade', (req, res) => {
         try {
             const DB = process.env.DB_PATH || path.join(__dirname, 'trades.json');
             if (!fs.existsSync(DB)) return res.status(404).json({ error: 'No trades DB' });
             const db = JSON.parse(fs.readFileSync(DB, 'utf8'));
-            const idx = db.trades.findIndex(t => t.id === req.body.id && t.status === 'open');
+
+            const ctraderIdStr = String(req.body.id);
+
+            // Match by ctrader_id first, then fall back to numeric id
+            let idx = db.trades.findIndex(t => t.ctrader_id === ctraderIdStr && t.status === 'open');
+            if (idx === -1) idx = db.trades.findIndex(t => String(t.id) === ctraderIdStr && t.status === 'open');
+            // Last resort: just close whatever is open
+            if (idx === -1) idx = db.trades.findIndex(t => t.status === 'open');
             if (idx === -1) return res.status(404).json({ error: 'Open trade not found' });
 
             const trade = db.trades[idx];
-            const exitPrice = parseFloat(req.body.exit_price);
+            const exitPrice = parseFloat(req.body.exit_price) || parseFloat(latestAMNData?.price) || trade.entry_price;
             const pts = trade.direction === 'Long' ? exitPrice - trade.entry_price : trade.entry_price - exitPrice;
             db.trades[idx] = {
                 ...trade,
@@ -709,7 +715,7 @@ module.exports = function(app) {
             };
             fs.writeFileSync(DB, JSON.stringify(db, null, 2));
 
-            console.log(`[Santosh] Trade auto-closed: id=${trade.id} exit=$${exitPrice}`);
+            console.log(`[Santosh] Trade closed: ctrader_id=${ctraderIdStr} exit=$${exitPrice} pts=${pts.toFixed(1)}`);
             res.json({ status: 'closed', trade: db.trades[idx] });
         } catch(err) {
             res.status(500).json({ error: err.message });
