@@ -544,7 +544,8 @@ async function pollTrade() {
     const data = await res.json();
     if (data.open) {
       const t = data.open;
-      const price = marketCtx.price || t.entry_price;
+      // Use live price from market context if available, else fall back to entry
+      const price = parseFloat(marketCtx.price) || parseFloat(t.entry_price);
       const pts = t.direction==='Long' ? price-t.entry_price : t.entry_price-price;
       const pnl = (pts*t.ppp*t.size).toFixed(2);
       const dur = Math.round((Date.now()-t.entry_time)/1000);
@@ -552,7 +553,7 @@ async function pollTrade() {
       updateTradePanel({
         direction:t.direction,
         entry:parseFloat(t.entry_price).toFixed(2),
-        currentPrice:parseFloat(price).toFixed(2),
+        currentPrice:price.toFixed(2),
         points:pts.toFixed(1),
         pnl,
         inProfit:pts>0,
@@ -644,7 +645,7 @@ pollLevels();
 pollTrade();
 setInterval(pollFeed, 3000);
 setInterval(pollNews, 30000);
-setInterval(pollTrade, 5000);
+setInterval(pollTrade, 3000);
 setInterval(pollLevels, 5*60*1000);
 </script>
 </body>
