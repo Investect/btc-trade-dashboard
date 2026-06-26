@@ -517,19 +517,19 @@ module.exports = function(app) {
         }
     });
 
-    // POST /analyst-bb-price — receives live BlackBull price from injected.js
-    let bbLivePrice = null;
-    let bbLivePriceTs = 0;
+    // POST /analyst-bb-price — receives live BlackBull bid/ask from injected.js
+    let bbBid = null, bbAsk = null, bbLivePriceTs = 0;
     app.post('/analyst-bb-price', (req, res) => {
-        bbLivePrice = parseFloat(req.body.price);
+        bbBid = parseFloat(req.body.bid);
+        bbAsk = parseFloat(req.body.ask);
         bbLivePriceTs = Date.now();
         res.json({ ok: true });
     });
 
     // GET /analyst-bb-price — HTML polls this for accurate P&L
     app.get('/analyst-bb-price', (req, res) => {
-        const fresh = bbLivePrice && (Date.now() - bbLivePriceTs) < 10000;
-        res.json({ price: fresh ? bbLivePrice : null });
+        const fresh = bbBid && (Date.now() - bbLivePriceTs) < 10000;
+        res.json({ bid: fresh ? bbBid : null, ask: fresh ? bbAsk : null });
     });
 
     // GET /analyst-feed
