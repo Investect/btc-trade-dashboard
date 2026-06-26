@@ -715,19 +715,27 @@ async function pollLevels() {
 // ── POLL TRADE ─────────────────────────────────────────────────
 async function pollTrade() {
   try {
-    // Fetch live Binance price and trade status in parallel
-    const [tradeRes, priceRes] = await Promise.allSettled([
+    // Fetch BB live price (most accurate), trade status, and Binance as fallback
+    const [tradeRes, bbPriceRes] = await Promise.allSettled([
       fetch('/api/trades'),
-      fetch('https://api.binance.com/api/v3/ticker/price?symbol=BTCUSDT')
+      fetch('/analyst-bb-price')
     ]);
-    // Update live price from Binance
-    if (priceRes.status === 'fulfilled') {
+    // Prefer BlackBull price (direct from cTrader feed), fall back to Binance
+    if (bbPriceRes.status === 'fulfilled') {
       try {
-        const pd = await priceRes.value.json();
+        const pd = await bbPriceRes.value.json();
         if (pd.price) {
           currentPrice = parseFloat(pd.price);
           document.getElementById('pv').textContent = '$'+currentPrice.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2});
         }
+      } catch(e) {}
+    }
+    // Binance fallback if BB price not available
+    if (!currentPrice) {
+      try {
+        const br = await fetch('https://api.binance.com/api/v3/ticker/price?symbol=BTCUSDT');
+        const bd = await br.json();
+        if (bd.price) currentPrice = parseFloat(bd.price);
       } catch(e) {}
     }
     if (tradeRes.status !== 'fulfilled') return;
