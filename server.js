@@ -67,7 +67,33 @@ app.get('/api/trades', (req, res) => {
   res.json({ closed, open, stats: { total: last8.length, wins, losses, net_pnl: net, avg_pnl: pnls.length?net/pnls.length:0, best: pnls.length?Math.max(...pnls):0, worst: pnls.length?Math.min(...pnls):0 } });
 });
 
-// ─── MANUAL TRADE ────────────────────────────────────────────────────────────
+// ─── SET OPEN TRADE DIRECTLY ─────────────────────────────────────────────────
+app.post('/api/open-trade', (req, res) => {
+  try {
+    const { direction, entry_price, size = 0.01, ppp = 1.0, symbol = 'BTCUSD' } = req.body;
+    if (!direction || !entry_price) return res.status(400).json({ error: 'direction and entry_price required' });
+    const db = readDb();
+    // Close any existing open trade first
+    const openIdx = db.trades.findIndex(t => t.status === 'open');
+    if (openIdx >= 0) db.trades[openIdx].status = 'cancelled';
+    // Add new open trade
+    db.trades.push({
+      id: db.nextId++,
+      direction,
+      entry_price: parseFloat(entry_price),
+      entry_time: Date.now(),
+      exit_price: null,
+      exit_time: null,
+      size: parseFloat(size),
+      ppp: parseFloat(ppp),
+      points: null,
+      pnl: null,
+      status: 'open'
+    });
+    writeDb(db);
+    res.json({ ok: true, message: `Open trade registered: ${direction} @ ${entry_price}` });
+  } catch(err) { res.status(500).json({ error: err.message }); }
+});
 app.post('/api/trade', (req, res) => {
   const { direction, entry_price, exit_price, entry_time, exit_time, size=1, ppp=1 } = req.body;
   if (!direction||!entry_price||!exit_price) return res.status(400).json({ error: 'direction, entry_price, exit_price required' });
