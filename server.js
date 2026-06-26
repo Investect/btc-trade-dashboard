@@ -61,10 +61,11 @@ app.get('/api/trades', (req, res) => {
   const allClosed = db.trades.filter(t => t.status==='closed').sort((a,b) => b.exit_time-a.exit_time);
   const closed = req.query.all==='1' ? allClosed : allClosed.slice(0,8);
   const open   = db.trades.find(t => t.status==='open') || null;
+  const opens  = db.trades.filter(t => t.status==='open');
   const last8  = allClosed.slice(0,8);
   const wins   = last8.filter(t=>t.pnl>0).length, losses = last8.filter(t=>t.pnl<0).length;
   const net    = last8.reduce((s,t)=>s+(t.pnl||0),0), pnls = last8.map(t=>t.pnl).filter(v=>v!=null);
-  res.json({ closed, open, stats: { total: last8.length, wins, losses, net_pnl: net, avg_pnl: pnls.length?net/pnls.length:0, best: pnls.length?Math.max(...pnls):0, worst: pnls.length?Math.min(...pnls):0 } });
+  res.json({ closed, open, opens, stats: { total: last8.length, wins, losses, net_pnl: net, avg_pnl: pnls.length?net/pnls.length:0, best: pnls.length?Math.max(...pnls):0, worst: pnls.length?Math.min(...pnls):0 } });
 });
 
 // ─── SET OPEN TRADE DIRECTLY ─────────────────────────────────────────────────
@@ -73,10 +74,8 @@ app.post('/api/open-trade', (req, res) => {
     const { direction, entry_price, size = 0.01, ppp = 1.0, symbol = 'BTCUSD' } = req.body;
     if (!direction || !entry_price) return res.status(400).json({ error: 'direction and entry_price required' });
     const db = readDb();
-    // Close any existing open trade first
     const openIdx = db.trades.findIndex(t => t.status === 'open');
     if (openIdx >= 0) db.trades[openIdx].status = 'cancelled';
-    // Add new open trade
     db.trades.push({
       id: db.nextId++,
       direction,
@@ -94,6 +93,7 @@ app.post('/api/open-trade', (req, res) => {
     res.json({ ok: true, message: `Open trade registered: ${direction} @ ${entry_price}` });
   } catch(err) { res.status(500).json({ error: err.message }); }
 });
+
 app.post('/api/trade', (req, res) => {
   const { direction, entry_price, exit_price, entry_time, exit_time, size=1, ppp=1 } = req.body;
   if (!direction||!entry_price||!exit_price) return res.status(400).json({ error: 'direction, entry_price, exit_price required' });
@@ -218,14 +218,6 @@ function scoreHeadline(title, source) {
   }
   if (/whale.?alert|cryptoquant|glassnode/.test((source||'').toLowerCase())) score = Math.min(5, score + 1);
   return { score, bullets, category };
-}
-
-function timeSince(dateStr) {
-  if (!dateStr) return null;
-  const diff = Math.round((Date.now() - new Date(dateStr).getTime()) / 60000);
-  if (diff < 1)  return 'just now';
-  if (diff < 60) return `${diff}m ago`;
-  return `${Math.floor(diff/60)}h ${diff%60}m ago`;
 }
 
 function decayScore(score, dateStr) {
@@ -538,39 +530,24 @@ app.get('/orderbook', (req, res) => res.sendFile(path.join(__dirname, 'public', 
 // ─── BINANCE PROXY ROUTES ────────────────────────────────────────────────────
 app.get('/api/ob/book', async (req, res) => {
   try {
-    const r = await fetch('https://fapi.binance.com/fapi/v1/depth?symbol=BTCUSDT&limit=20', {
-      signal: AbortSignal.timeout(4000)
-    });
+    const r = await fetch('https://fapi.binance.com/fapi/v1/depth?symbol=BTCUSDT&limit=20', { signal: AbortSignal.timeout(4000) });
     const d = await r.json();
     res.json({ bids: d.bids || [], asks: d.asks || [] });
-  } catch(e) {
-    res.status(500).json({ error: e.message });
-  }
+  } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
 app.get('/api/ob/trades', async (req, res) => {
   try {
     const [trades, ticker] = await Promise.all([
-      fetch('https://fapi.binance.com/fapi/v1/trades?symbol=BTCUSDT&limit=20', {
-        signal: AbortSignal.timeout(4000)
-      }).then(r => r.json()),
-      fetch('https://fapi.binance.com/fapi/v1/ticker/24hr?symbol=BTCUSDT', {
-        signal: AbortSignal.timeout(4000)
-      }).then(r => r.json()),
+      fetch('https://fapi.binance.com/fapi/v1/trades?symbol=BTCUSDT&limit=20', { signal: AbortSignal.timeout(4000) }).then(r => r.json()),
+      fetch('https://fapi.binance.com/fapi/v1/ticker/24hr?symbol=BTCUSDT', { signal: AbortSignal.timeout(4000) }).then(r => r.json()),
     ]);
     res.json({
-      trades: (trades || []).map(t => ({
-        price:        t.price,
-        qty:          t.qty,
-        isBuyerMaker: t.isBuyerMaker,
-        time:         t.time,
-      })),
+      trades: (trades || []).map(t => ({ price: t.price, qty: t.qty, isBuyerMaker: t.isBuyerMaker, time: t.time })),
       high: ticker.highPrice || 0,
       low:  ticker.lowPrice  || 0,
     });
-  } catch(e) {
-    res.status(500).json({ error: e.message });
-  }
+  } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
 app.get('/api/ob/klines', async (req, res) => {
@@ -600,9 +577,7 @@ setInterval(async () => {
   try {
     await fetch(`${SELF_URL}/health`, { signal: AbortSignal.timeout(5000) });
     console.log('[keep-alive] ping ok');
-  } catch(e) {
-    console.log('[keep-alive] ping failed:', e.message);
-  }
+  } catch(e) { console.log('[keep-alive] ping failed:', e.message); }
 }, 4 * 60 * 1000);
 
 // ─── START ───────────────────────────────────────────────────────────────────
