@@ -715,8 +715,23 @@ async function pollLevels() {
 // ── POLL TRADE ─────────────────────────────────────────────────
 async function pollTrade() {
   try {
-    const res = await fetch('/api/trades');
-    const data = await res.json();
+    // Fetch live Binance price and trade status in parallel
+    const [tradeRes, priceRes] = await Promise.allSettled([
+      fetch('/api/trades'),
+      fetch('https://api.binance.com/api/v3/ticker/price?symbol=BTCUSDT')
+    ]);
+    // Update live price from Binance
+    if (priceRes.status === 'fulfilled') {
+      try {
+        const pd = await priceRes.value.json();
+        if (pd.price) {
+          currentPrice = parseFloat(pd.price);
+          document.getElementById('pv').textContent = '$'+currentPrice.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2});
+        }
+      } catch(e) {}
+    }
+    if (tradeRes.status !== 'fulfilled') return;
+    const data = await tradeRes.value.json();
     if (data.open) {
       const t = data.open;
       const price = currentPrice || parseFloat(t.entry_price);
