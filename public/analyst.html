@@ -11,6 +11,7 @@
   --bg:#050709;
   --s1:#090c11;
   --s2:#0d1117;
+  --s3:#0a0e16;
   --b1:#161c26;
   --b2:#1e2738;
   --amber:#f59e0b;
@@ -22,6 +23,8 @@
   --white:#f1f5f9;
   --grey:#94a3b8;
   --dim:#475569;
+  --row-a:#090c11;
+  --row-b:#0b0f17;
   --mono:'IBM Plex Mono',monospace;
   --sans:'Inter',sans-serif;
 }
@@ -42,153 +45,170 @@ body{background:var(--bg);color:var(--white);font-family:var(--sans);display:fle
 .pip{width:6px;height:6px;border-radius:50%;background:var(--green);box-shadow:0 0 5px var(--green);animation:pip 2s infinite;margin-left:auto}
 @keyframes pip{0%,100%{opacity:1}50%{opacity:.2}}
 
-/* 3-COLUMN LAYOUT */
+/* 4-COLUMN LAYOUT */
 #cols{display:flex;flex:1;overflow:hidden;min-height:0}
+.col-head{padding:8px 14px;border-bottom:1px solid var(--b1);background:var(--s1);display:flex;align-items:center;gap:8px;flex-shrink:0}
+.col-title{font-size:9px;font-family:var(--mono);color:var(--dim);text-transform:uppercase;letter-spacing:2px}
 
 /* COL 1 — LIVE FEED */
-#col1{width:38%;border-right:1px solid var(--b1);display:flex;flex-direction:column;overflow:hidden}
-#col1-head{padding:8px 14px;border-bottom:1px solid var(--b1);background:var(--s1);display:flex;align-items:center;gap:8px;flex-shrink:0}
-.col-title{font-size:9px;font-family:var(--mono);color:var(--dim);text-transform:uppercase;letter-spacing:2px}
+#col1{width:25%;border-right:1px solid var(--b1);display:flex;flex-direction:column;overflow:hidden}
 .tab-row{display:flex;gap:0;margin-left:auto}
-.ftab{font-size:9px;font-family:var(--mono);color:var(--dim);padding:3px 10px;cursor:pointer;border:1px solid transparent;border-radius:3px;transition:all .15s;text-transform:uppercase;letter-spacing:.5px}
+.ftab{font-size:9px;font-family:var(--mono);color:var(--dim);padding:3px 8px;cursor:pointer;border:1px solid transparent;border-radius:3px;transition:all .15s;text-transform:uppercase;letter-spacing:.5px}
 .ftab.on{color:var(--amber);border-color:rgba(245,158,11,.3);background:rgba(245,158,11,.06)}
 #feed{flex:1;overflow-y:auto;padding:0}
 #feed::-webkit-scrollbar{width:2px}
 #feed::-webkit-scrollbar-thumb{background:var(--b2)}
 
+/* Alternating feed rows */
+.tweet:nth-child(odd){background:var(--row-a)}
+.tweet:nth-child(even){background:var(--row-b)}
+.tweet{padding:9px 12px;border-bottom:1px solid rgba(22,28,38,.6);display:flex;gap:9px;transition:background .1s;cursor:default}
+.tweet:hover{background:rgba(255,255,255,.02)!important}
+
 /* COL 2 — CHAT */
-#col2{width:28%;border-right:1px solid var(--b1);display:flex;flex-direction:column;overflow:hidden}
-#col2-head{padding:8px 14px;border-bottom:1px solid var(--b1);background:var(--s1);flex-shrink:0;display:flex;align-items:center;gap:8px}
+#col2{width:22%;border-right:1px solid var(--b1);display:flex;flex-direction:column;overflow:hidden}
 #chat-msgs{flex:1;overflow-y:auto;padding:10px}
 #chat-msgs::-webkit-scrollbar{width:2px}
 #chat-msgs::-webkit-scrollbar-thumb{background:var(--b2)}
-.chat-intro{background:rgba(245,158,11,.04);border:1px solid rgba(245,158,11,.1);border-radius:8px;padding:12px;font-size:12px;color:var(--grey);line-height:1.7;text-align:center}
+.chat-intro{background:rgba(245,158,11,.04);border:1px solid rgba(245,158,11,.1);border-radius:8px;padding:12px;font-size:11px;color:var(--grey);line-height:1.7;text-align:center}
 .chat-intro strong{color:var(--amber)}
 .msg{display:flex;flex-direction:column;gap:2px;animation:fin .2s ease;margin-bottom:8px}
 .msg.user{align-items:flex-end}.msg.bot{align-items:flex-start}
 .mn{font-size:8px;font-family:var(--mono);color:var(--dim);text-transform:uppercase;letter-spacing:1px;padding:0 4px}
-.mb{padding:8px 11px;border-radius:8px;font-size:12px;line-height:1.55;max-width:90%}
+.mb{padding:7px 10px;border-radius:8px;font-size:11px;line-height:1.55;max-width:92%}
 .msg.user .mb{background:rgba(245,158,11,.1);border:1px solid rgba(245,158,11,.2);color:var(--amber2)}
 .msg.bot .mb{background:var(--s2);border:1px solid var(--b1);color:var(--white)}
-.typing{display:flex;gap:3px;padding:9px 11px;background:var(--s2);border:1px solid var(--b1);border-radius:8px;width:fit-content}
+.typing{display:flex;gap:3px;padding:8px 10px;background:var(--s2);border:1px solid var(--b1);border-radius:8px;width:fit-content}
 .td{width:4px;height:4px;border-radius:50%;background:var(--amber);animation:tb 1.2s infinite}
 .td:nth-child(2){animation-delay:.2s}.td:nth-child(3){animation-delay:.4s}
 @keyframes tb{0%,60%,100%{transform:translateY(0);opacity:.3}30%{transform:translateY(-4px);opacity:1}}
 #chat-input-wrap{padding:8px 10px;border-top:1px solid var(--b1);display:flex;gap:6px;flex-shrink:0}
-#chat-input{flex:1;background:var(--bg);border:1px solid var(--b1);border-radius:16px;color:var(--white);font-family:var(--sans);font-size:12px;padding:7px 12px;outline:none;resize:none;height:34px;line-height:1.4;transition:border-color .15s}
+#chat-input{flex:1;background:var(--bg);border:1px solid var(--b1);border-radius:16px;color:var(--white);font-family:var(--sans);font-size:11px;padding:6px 11px;outline:none;resize:none;height:32px;line-height:1.4;transition:border-color .15s}
 #chat-input:focus{border-color:rgba(245,158,11,.3)}
 #chat-input::placeholder{color:var(--dim)}
-#send-btn{background:var(--amber);color:#000;border:none;border-radius:16px;padding:7px 14px;font-size:11px;font-weight:700;cursor:pointer;transition:opacity .15s;flex-shrink:0}
+#send-btn{background:var(--amber);color:#000;border:none;border-radius:16px;padding:6px 12px;font-size:11px;font-weight:700;cursor:pointer;transition:opacity .15s;flex-shrink:0}
 #send-btn:hover{opacity:.85}#send-btn:disabled{opacity:.4;cursor:not-allowed}
 
-/* COL 3 — LIVE ANALYSIS */
-#col3{flex:1;display:flex;flex-direction:column;overflow:hidden}
-#col3-head{padding:8px 14px;border-bottom:1px solid var(--b1);background:var(--s1);flex-shrink:0}
+/* COL 3 — ACTIVE TRADES + TRADE OBSERVATIONS */
+#col3{width:28%;border-right:1px solid var(--b1);display:flex;flex-direction:column;overflow:hidden}
+.sec-title{font-size:8px;font-family:var(--mono);color:var(--dim);text-transform:uppercase;letter-spacing:2px;padding:6px 12px;border-bottom:1px solid var(--b1);background:var(--bg);flex-shrink:0}
 
-/* col3 sections */
-.c3-section{border-bottom:1px solid var(--b1);flex-shrink:0}
-.c3-section-title{font-size:8px;font-family:var(--mono);color:var(--dim);text-transform:uppercase;letter-spacing:2px;padding:7px 14px;border-bottom:1px solid var(--b1);background:var(--bg)}
-
-/* Trade status */
-#trade-panel{padding:12px 14px}
+/* Trade cards */
+#trade-panel{padding:10px 12px;flex-shrink:0}
 .no-trade{font-size:11px;color:var(--dim);font-family:var(--mono)}
-.trade-live{display:flex;flex-direction:column;gap:8px}
-.trade-dir{font-size:18px;font-weight:700;font-family:var(--mono)}
+.trade-live{display:flex;flex-direction:column;gap:6px}
+.trade-card{border:1px solid var(--b2);border-radius:6px;padding:8px 10px;background:var(--s2)}
+.trade-card.long-card{border-left:2px solid var(--green)}
+.trade-card.short-card{border-left:2px solid var(--red)}
+.trade-dir-row{display:flex;align-items:center;justify-content:space-between;margin-bottom:6px}
+.trade-dir{font-size:15px;font-weight:700;font-family:var(--mono)}
 .td-long{color:var(--green)}.td-short{color:var(--red)}
-.trade-stats{display:grid;grid-template-columns:1fr 1fr;gap:6px}
-.tstat{background:var(--s2);border:1px solid var(--b1);border-radius:4px;padding:7px 10px}
+.trade-pts{font-size:12px;font-family:var(--mono);font-weight:600}
+.trade-grid{display:grid;grid-template-columns:1fr 1fr;gap:4px}
+.tstat{background:var(--bg);border:1px solid var(--b1);border-radius:4px;padding:5px 8px}
 .tstat-lbl{font-size:8px;font-family:var(--mono);color:var(--dim);text-transform:uppercase;letter-spacing:1px}
-.tstat-val{font-size:13px;font-family:var(--mono);font-weight:700;margin-top:2px}
-.tv-profit{color:var(--green)}.tv-loss{color:var(--red)}.tv-neutral{color:var(--amber)}
+.tstat-val{font-size:12px;font-family:var(--mono);font-weight:700;margin-top:1px}
+.tv-neutral{color:var(--amber)}
 
-/* [4] Candle pattern section */
+/* Trade observations — alternating rows */
+#trade-obs{flex:1;overflow-y:auto}
+#trade-obs::-webkit-scrollbar{width:2px}
+#trade-obs::-webkit-scrollbar-thumb{background:var(--b2)}
+.tobs-item{padding:9px 12px;border-bottom:1px solid rgba(22,28,38,.6);animation:fin .2s ease}
+.tobs-item:nth-child(odd){background:var(--row-a)}
+.tobs-item:nth-child(even){background:var(--row-b)}
+.tobs-head{display:flex;align-items:center;gap:6px;margin-bottom:4px}
+.tobs-tag{font-size:9px;font-family:var(--mono);font-weight:600;padding:2px 6px;border-radius:10px;text-transform:uppercase;letter-spacing:.5px}
+.tobs-time{font-size:9px;font-family:var(--mono);color:var(--dim);margin-left:auto}
+.tobs-text{font-size:11px;line-height:1.55;color:#e2e8f0}
+.tobs-bullet{font-size:11px;color:var(--grey);margin-top:3px;padding-left:10px;border-left:2px solid var(--b2);line-height:1.5}
+.tobs-price{font-size:10px;font-family:var(--mono);color:var(--amber);margin-top:3px}
+.tag-profit{background:rgba(52,211,153,.12);color:var(--green);border:1px solid rgba(52,211,153,.25)}
+.tag-warn{background:rgba(248,113,113,.12);color:var(--red);border:1px solid rgba(248,113,113,.25)}
+.tag-level{background:rgba(245,158,11,.1);color:var(--amber);border:1px solid rgba(245,158,11,.2)}
+.tag-signal{background:rgba(34,211,238,.1);color:var(--cyan);border:1px solid rgba(34,211,238,.2)}
+.tag-news{background:rgba(167,139,250,.1);color:var(--purple);border:1px solid rgba(167,139,250,.2)}
+
+/* COL 4 — CANDLE PATTERN + KEY LEVELS */
+#col4{flex:1;display:flex;flex-direction:column;overflow:hidden}
+
+/* Candle pattern */
 #pattern-section{border-bottom:1px solid var(--b1);flex-shrink:0}
-#pattern-inner{padding:10px 14px;display:flex;align-items:center;gap:12px}
+#pattern-inner{padding:10px 12px;display:flex;align-items:center;gap:10px}
 #pattern-svg-wrap{flex-shrink:0}
 #pattern-info{flex:1;min-width:0}
 #pattern-name{font-size:12px;font-weight:700;font-family:var(--mono)}
 #pattern-desc{font-size:10px;color:var(--grey);margin-top:2px;line-height:1.4}
-#pattern-empty{font-size:10px;color:var(--dim);font-family:var(--mono);padding:10px 14px}
+#pattern-empty{font-size:10px;color:var(--dim);font-family:var(--mono);padding:10px 12px}
 
-/* [2] Key levels ladder */
-#levels-ladder{padding:8px 14px;display:flex;flex-direction:column;gap:4px;background:var(--bg);max-height:130px;overflow-y:auto;flex-shrink:0}
+/* Key levels ladder */
+#levels-section{border-bottom:1px solid var(--b1);flex-shrink:0}
+#levels-ladder{padding:6px 12px;display:flex;flex-direction:column;gap:3px;background:var(--bg);max-height:160px;overflow-y:auto}
 #levels-ladder::-webkit-scrollbar{width:2px}
 #levels-ladder::-webkit-scrollbar-thumb{background:var(--b2)}
-.level-row{display:flex;align-items:center;gap:8px;padding:3px 0;transition:background .1s}
-.level-row.closest{background:rgba(245,158,11,.05);border-radius:4px;padding:3px 6px;margin:0 -6px}
-.level-dist{font-size:9px;font-family:var(--mono);color:var(--dim);width:52px;text-align:right;flex-shrink:0}
-.level-bar-wrap{flex:1;height:2px;background:var(--b2);border-radius:1px;position:relative}
+.level-row{display:flex;align-items:center;gap:7px;padding:3px 0}
+.level-row.closest{background:rgba(245,158,11,.05);border-radius:4px;padding:3px 5px;margin:0 -5px}
+.level-dist{font-size:9px;font-family:var(--mono);color:var(--dim);width:48px;text-align:right;flex-shrink:0}
+.level-bar-wrap{flex:1;height:2px;background:var(--b2);border-radius:1px}
 .level-bar{height:100%;border-radius:1px;transition:width .4s}
-.lchip{font-size:10px;font-family:var(--mono);font-weight:600;padding:2px 8px;border-radius:10px;white-space:nowrap;flex-shrink:0}
-.lchip.closest-chip{box-shadow:0 0 6px currentColor;opacity:1}
+.lchip{font-size:10px;font-family:var(--mono);font-weight:600;padding:2px 7px;border-radius:10px;white-space:nowrap;flex-shrink:0}
+.lchip.closest-chip{box-shadow:0 0 6px currentColor}
 .lc-h{background:rgba(52,211,153,.08);color:var(--green);border:1px solid rgba(52,211,153,.2)}
 .lc-l{background:rgba(248,113,113,.08);color:var(--red);border:1px solid rgba(248,113,113,.2)}
 .lc-e{background:rgba(34,211,238,.08);color:var(--cyan);border:1px solid rgba(34,211,238,.2)}
 .lc-n{background:rgba(245,158,11,.08);color:var(--amber);border:1px solid rgba(245,158,11,.2)}
-#levels-empty{font-size:10px;color:var(--dim);font-family:var(--mono);padding:10px 14px}
 .level-arrow{font-size:9px;flex-shrink:0}
 
-/* Santosh live observations */
-#obs-feed{flex:1;overflow-y:auto;padding:0}
+/* General obs feed in col4 bottom */
+#obs-feed{flex:1;overflow-y:auto}
 #obs-feed::-webkit-scrollbar{width:2px}
 #obs-feed::-webkit-scrollbar-thumb{background:var(--b2)}
-
-/* [3] Variable-format observation cards */
-.obs-item{padding:9px 14px;border-bottom:1px solid var(--b1);animation:fin .25s ease}
-.obs-item.obs-short{padding:7px 14px}
-.obs-header{display:flex;align-items:center;gap:8px;margin-bottom:4px}
-.obs-tag{font-size:9px;font-family:var(--mono);font-weight:600;padding:2px 7px;border-radius:10px;text-transform:uppercase;letter-spacing:.5px}
+.obs-item{padding:8px 12px;border-bottom:1px solid rgba(22,28,38,.6);animation:fin .25s ease}
+.obs-item:nth-child(odd){background:var(--row-a)}
+.obs-item:nth-child(even){background:var(--row-b)}
+.obs-item.obs-short{padding:6px 12px}
+.obs-header{display:flex;align-items:center;gap:7px;margin-bottom:3px}
+.obs-tag{font-size:9px;font-family:var(--mono);font-weight:600;padding:2px 6px;border-radius:10px;text-transform:uppercase;letter-spacing:.5px}
 .ot-signal{background:rgba(34,211,238,.1);color:var(--cyan);border:1px solid rgba(34,211,238,.2)}
 .ot-level{background:rgba(245,158,11,.1);color:var(--amber);border:1px solid rgba(245,158,11,.2)}
 .ot-news{background:rgba(167,139,250,.1);color:var(--purple);border:1px solid rgba(167,139,250,.2)}
 .ot-trade{background:rgba(52,211,153,.1);color:var(--green);border:1px solid rgba(52,211,153,.2)}
 .ot-warn{background:rgba(248,113,113,.1);color:var(--red);border:1px solid rgba(248,113,113,.2)}
 .obs-time{font-size:9px;font-family:var(--mono);color:var(--dim);margin-left:auto}
-.obs-text{font-size:12px;line-height:1.55;color:#e2e8f0}
-.obs-text.one-liner{font-size:11px;color:var(--grey)}
-.obs-price{font-size:11px;font-family:var(--mono);color:var(--amber);margin-top:3px}
+.obs-text{font-size:11px;line-height:1.55;color:#e2e8f0}
+.obs-text.one-liner{font-size:10px;color:var(--grey)}
+.obs-price{font-size:10px;font-family:var(--mono);color:var(--amber);margin-top:2px}
 
-/* FEED CARDS */
-.tweet{padding:11px 14px;border-bottom:1px solid var(--b1);display:flex;gap:10px;transition:background .1s;cursor:default}
-.tweet:hover{background:rgba(255,255,255,.015)}
+/* Tweet components */
 @keyframes fin{from{opacity:0;transform:translateY(-4px)}to{opacity:1;transform:translateY(0)}}
-
-.av{width:32px;height:32px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:14px;flex-shrink:0;margin-top:1px}
+.av{width:28px;height:28px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:12px;flex-shrink:0;margin-top:1px}
 .av-s{background:linear-gradient(135deg,#1a0a00,#3d1f00);border:1px solid rgba(245,158,11,.4)}
 .av-n{background:linear-gradient(135deg,#0a001a,#200050);border:1px solid rgba(167,139,250,.3)}
 .av-w{background:linear-gradient(135deg,#001520,#003050);border:1px solid rgba(34,211,238,.3)}
-.av-sys{background:var(--s2);border:1px solid var(--b2)}
-
 .tw-body{flex:1;min-width:0}
-.tw-head{display:flex;align-items:center;gap:6px;margin-bottom:4px;flex-wrap:wrap}
-.tw-name{font-size:12px;font-weight:700;color:var(--white);white-space:nowrap}
-.tw-handle{font-size:11px;color:var(--dim);white-space:nowrap}
-.tw-time{font-size:10px;color:var(--dim);font-family:var(--mono);margin-left:auto;white-space:nowrap}
-.tw-price{font-size:10px;font-family:var(--mono);color:var(--amber);font-weight:600;white-space:nowrap}
-
-.sig-tag{display:inline-flex;align-items:center;font-size:9px;font-family:var(--mono);font-weight:600;padding:2px 7px;border-radius:10px;text-transform:uppercase;letter-spacing:.5px;white-space:nowrap}
+.tw-head{display:flex;align-items:center;gap:5px;margin-bottom:3px;flex-wrap:wrap}
+.tw-name{font-size:11px;font-weight:700;color:var(--white);white-space:nowrap}
+.tw-handle{font-size:10px;color:var(--dim);white-space:nowrap}
+.tw-time{font-size:9px;color:var(--dim);font-family:var(--mono);margin-left:auto;white-space:nowrap}
+.tw-price{font-size:9px;font-family:var(--mono);color:var(--amber);font-weight:600;white-space:nowrap}
+.sig-tag{display:inline-flex;align-items:center;font-size:9px;font-family:var(--mono);font-weight:600;padding:2px 6px;border-radius:10px;text-transform:uppercase;letter-spacing:.5px;white-space:nowrap}
 .st-bull{background:rgba(52,211,153,.1);color:var(--green);border:1px solid rgba(52,211,153,.2)}
 .st-bear{background:rgba(248,113,113,.1);color:var(--red);border:1px solid rgba(248,113,113,.2)}
 .st-amber{background:rgba(245,158,11,.1);color:var(--amber);border:1px solid rgba(245,158,11,.2)}
 .st-cyan{background:rgba(34,211,238,.1);color:var(--cyan);border:1px solid rgba(34,211,238,.2)}
 .st-purple{background:rgba(167,139,250,.1);color:var(--purple);border:1px solid rgba(167,139,250,.2)}
-
-.tw-text{font-size:12px;line-height:1.6;color:#e2e8f0;word-break:break-word}
-.tw-text.sm{font-size:11px;color:var(--grey)}
-
-.tw-go-long{background:linear-gradient(135deg,rgba(52,211,153,.05) 0%,transparent 70%);border-left:2px solid var(--green)}
-.tw-go-short{background:linear-gradient(135deg,rgba(248,113,113,.05) 0%,transparent 70%);border-left:2px solid var(--red)}
-
-.zbox{display:flex;margin-top:7px;border:1px solid var(--b2);border-radius:5px;overflow:hidden}
-.zc{flex:1;padding:5px 8px;border-right:1px solid var(--b2)}
+.tw-text{font-size:11px;line-height:1.55;color:#e2e8f0;word-break:break-word}
+.tw-text.sm{font-size:10px;color:var(--grey)}
+.tw-go-long{border-left:2px solid var(--green)}
+.tw-go-short{border-left:2px solid var(--red)}
+.zbox{display:flex;margin-top:6px;border:1px solid var(--b2);border-radius:4px;overflow:hidden}
+.zc{flex:1;padding:4px 7px;border-right:1px solid var(--b2)}
 .zc:last-child{border-right:none}
 .zc-l{font-size:8px;font-family:var(--mono);color:var(--dim);text-transform:uppercase;letter-spacing:1px}
-.zc-v{font-size:12px;font-family:var(--mono);font-weight:700;margin-top:1px}
+.zc-v{font-size:11px;font-family:var(--mono);font-weight:700;margin-top:1px}
 .zc-e{color:var(--cyan)}.zc-t{color:var(--green)}.zc-s{color:var(--red)}
-
-/* [1] Session banner */
-.sess-banner{padding:7px 14px;border-bottom:1px solid var(--b1);display:flex;align-items:center;gap:8px;background:var(--s1)}
-.sess-pill{font-size:9px;font-family:var(--mono);font-weight:600;padding:2px 8px;border-radius:10px;text-transform:uppercase;letter-spacing:.5px}
+.sess-banner{padding:6px 12px;border-bottom:1px solid var(--b1);display:flex;align-items:center;gap:7px;background:var(--s1)}
+.sess-pill{font-size:9px;font-family:var(--mono);font-weight:600;padding:2px 7px;border-radius:10px;text-transform:uppercase;letter-spacing:.5px}
 .sp-ov{background:rgba(245,158,11,.1);color:var(--amber);border:1px solid rgba(245,158,11,.2)}
 .sp-lo{background:rgba(52,211,153,.08);color:var(--green);border:1px solid rgba(52,211,153,.15)}
 .sp-ny{background:rgba(34,211,238,.08);color:var(--cyan);border:1px solid rgba(34,211,238,.15)}
@@ -216,21 +236,21 @@ body{background:var(--bg);color:var(--white);font-family:var(--sans);display:fle
   <div class="pip" id="pip"></div>
 </div>
 
-<!-- 3 COLUMNS -->
+<!-- 4 COLUMNS -->
 <div id="cols">
 
   <!-- COL 1: LIVE FEED -->
   <div id="col1">
-    <div id="col1-head">
+    <div class="col-head">
       <span class="col-title">⚡ Live Feed</span>
       <div class="tab-row">
         <div class="ftab on" onclick="switchTab('all',this)">All</div>
-        <div class="ftab" onclick="switchTab('signals',this)">Signals</div>
+        <div class="ftab" onclick="switchTab('signals',this)">Sig</div>
         <div class="ftab" onclick="switchTab('news',this)">News</div>
       </div>
     </div>
     <div id="feed">
-      <div id="feed-ph" style="padding:40px 14px;text-align:center;color:var(--dim);font-size:11px;font-family:var(--mono);line-height:2.5">
+      <div id="feed-ph" style="padding:40px 12px;text-align:center;color:var(--dim);font-size:10px;font-family:var(--mono);line-height:2.5">
         WATCHING THE MARKET<br>
         <span style="font-size:9px;color:#1e2738">Signals and news will appear here</span>
       </div>
@@ -239,7 +259,7 @@ body{background:var(--bg);color:var(--white);font-family:var(--sans);display:fle
 
   <!-- COL 2: CHAT -->
   <div id="col2">
-    <div id="col2-head">
+    <div class="col-head">
       <span style="font-size:13px">💬</span>
       <span class="col-title">Ask Santosh</span>
     </div>
@@ -255,24 +275,31 @@ body{background:var(--bg);color:var(--white);font-family:var(--sans);display:fle
     </div>
   </div>
 
-  <!-- COL 3: LIVE ANALYSIS -->
+  <!-- COL 3: ACTIVE TRADES + TRADE OBSERVATIONS -->
   <div id="col3">
-    <div id="col3-head">
-      <span class="col-title">📊 Live Analysis</span>
+    <div class="col-head">
+      <span class="col-title">📈 Active Trades</span>
+    </div>
+    <div class="sec-title">Open Positions</div>
+    <div id="trade-panel">
+      <div class="no-trade" id="no-trade" style="padding:10px 12px">No open position</div>
+      <div class="trade-live" id="trade-live" style="display:none"></div>
+    </div>
+    <div class="sec-title">Santosh on Your Trades</div>
+    <div id="trade-obs">
+      <div style="padding:20px 12px;text-align:center;color:var(--dim);font-size:10px;font-family:var(--mono)" id="trade-obs-ph">No active trades to observe</div>
+    </div>
+  </div>
+
+  <!-- COL 4: CANDLE PATTERN + KEY LEVELS + OBSERVATIONS -->
+  <div id="col4">
+    <div class="col-head">
+      <span class="col-title">📊 Market Intel</span>
     </div>
 
-    <!-- Active Trade -->
-    <div class="c3-section">
-      <div class="c3-section-title">Active Trade</div>
-      <div id="trade-panel">
-        <div class="no-trade" id="no-trade">No open position</div>
-        <div class="trade-live" id="trade-live" style="display:none"></div>
-      </div>
-    </div>
-
-    <!-- [4] Candle Pattern -->
-    <div class="c3-section" id="pattern-section">
-      <div class="c3-section-title">Candle Pattern (1m)</div>
+    <!-- Candle Pattern -->
+    <div id="pattern-section">
+      <div class="sec-title">Candle Pattern (1m)</div>
       <div id="pattern-inner" style="display:none">
         <div id="pattern-svg-wrap"></div>
         <div id="pattern-info">
@@ -283,16 +310,16 @@ body{background:var(--bg);color:var(--white);font-family:var(--sans);display:fle
       <div id="pattern-empty">Fetching candles...</div>
     </div>
 
-    <!-- [2] Key Levels Ladder -->
-    <div class="c3-section">
-      <div class="c3-section-title">Key Levels</div>
+    <!-- Key Levels -->
+    <div id="levels-section">
+      <div class="sec-title">Key Levels</div>
       <div id="levels-ladder">
-        <span id="levels-empty" style="font-size:10px;color:var(--dim);font-family:var(--mono)">Fetching historical levels...</span>
+        <span id="levels-empty" style="font-size:10px;color:var(--dim);font-family:var(--mono)">Fetching levels...</span>
       </div>
     </div>
 
     <!-- Santosh Observations -->
-    <div class="c3-section-title">Santosh Observations</div>
+    <div class="sec-title">Santosh Observations</div>
     <div id="obs-feed"></div>
   </div>
 
@@ -463,7 +490,39 @@ function switchTab(tab, el) {
   if (!filtered.length) feed.innerHTML = `<div style="padding:30px 14px;text-align:center;color:var(--dim);font-size:11px;font-family:var(--mono)">No ${tab} events yet</div>`;
 }
 
-// ── COL3: OBSERVATIONS [3] — variable format ──────────────────
+
+// ── COL3: TRADE OBSERVATIONS — Santosh commentary on live trades ──
+let tradeObsCount = 0;
+function addTradeObs(text, tag, price) {
+  const ph = document.getElementById('trade-obs-ph');
+  if (ph) ph.remove();
+  const feed = document.getElementById('trade-obs');
+  const tagClasses = {profit:'tag-profit', warn:'tag-warn', level:'tag-level', signal:'tag-signal', news:'tag-news'};
+  const tagLabels = {profit:'💰 Profit', warn:'⚠️ Warning', level:'📍 Level', signal:'Signal', news:'News'};
+  const tagClass = tagClasses[tag] || 'tag-signal';
+  const tagLabel = tagLabels[tag] || 'Update';
+
+  // Parse text for bullet points (sentences starting with - or •)
+  const lines = text.split(/
+|(?<=\.)\s+(?=[A-Z•\-])/);
+  const main = lines[0];
+  const bullets = lines.slice(1).filter(l => l.trim());
+
+  const d = document.createElement('div');
+  d.className = 'tobs-item';
+  d.innerHTML = `
+    <div class="tobs-head">
+      <span class="tobs-tag ${tagClass}">${tagLabel}</span>
+      <span class="tobs-time">${new Date().toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'})}</span>
+    </div>
+    <div class="tobs-text">${main}</div>
+    ${bullets.map(b=>`<div class="tobs-bullet">· ${b.replace(/^[-•]\s*/,'')}</div>`).join('')}
+    ${price?`<div class="tobs-price">$${Number(price).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})}</div>`:''}`;
+  feed.insertBefore(d, feed.firstChild);
+  while(feed.children.length > 20) feed.removeChild(feed.lastChild);
+}
+
+// ── COL4: MARKET OBSERVATIONS ─────────────────────────────────
 function addObs(text, type, price) {
   const feed = document.getElementById('obs-feed');
   const tagMap = {signal:'ot-signal',level:'ot-level',news:'ot-news',trade:'ot-trade',warn:'ot-warn'};
@@ -485,6 +544,41 @@ function addObs(text, type, price) {
   while(feed.children.length>20) feed.removeChild(feed.lastChild);
 }
 
+// ── COL3: MULTI TRADE STATUS ──────────────────────────────────
+function updateMultiTradePanel(trades, bbBid, bbAsk) {
+  const noTrade = document.getElementById('no-trade');
+  const tradeLive = document.getElementById('trade-live');
+  noTrade.style.display = 'none';
+  tradeLive.style.display = 'flex';
+
+  const cards = trades.map(t => {
+    const bbPrice = t.direction === 'Short' ? bbAsk : bbBid;
+    const price = bbPrice || currentPrice || parseFloat(t.entry_price);
+    const pts = t.direction === 'Long' ? price - t.entry_price : t.entry_price - price;
+    const pnl = (pts * (t.ppp||1) * (t.size||1)).toFixed(2);
+    const inProfit = pts > 0;
+    const col = inProfit ? 'var(--green)' : 'var(--red)';
+    const dur = Math.round((Date.now() - t.entry_time) / 1000);
+    const durStr = dur < 60 ? dur+'s' : Math.floor(dur/60)+'m '+dur%60+'s';
+    const dirClass = t.direction === 'Long' ? 'long-card' : 'short-card';
+    const dirIcon = t.direction === 'Long' ? '▲ LONG' : '▼ SHORT';
+    return `<div class="trade-card ${dirClass}">
+      <div class="trade-dir-row">
+        <span class="trade-dir td-${t.direction==='Long'?'long':'short'}">${dirIcon}</span>
+        <span class="trade-pts" style="color:${col}">${inProfit?'+':''}${pts.toFixed(1)} pts</span>
+      </div>
+      <div class="trade-grid">
+        <div class="tstat"><div class="tstat-lbl">Entry</div><div class="tstat-val tv-neutral">$${parseFloat(t.entry_price).toFixed(2)}</div></div>
+        <div class="tstat"><div class="tstat-lbl">Current</div><div class="tstat-val" style="color:${col}">$${price.toFixed(2)}</div></div>
+        <div class="tstat"><div class="tstat-lbl">P&L</div><div class="tstat-val" style="color:${col};font-size:14px">${inProfit?'+':''}$${pnl}</div></div>
+        <div class="tstat"><div class="tstat-lbl">Duration</div><div class="tstat-val tv-neutral">${durStr}</div></div>
+      </div>
+    </div>`;
+  });
+
+  tradeLive.innerHTML = cards.join('');
+}
+
 // ── COL3: TRADE STATUS ─────────────────────────────────────────
 function updateTradePanel(tradeData) {
   const noTrade = document.getElementById('no-trade');
@@ -492,6 +586,9 @@ function updateTradePanel(tradeData) {
   if (!tradeData) {
     noTrade.style.display='block';
     tradeLive.style.display='none';
+    // Reset trade obs
+    const tobs = document.getElementById('trade-obs');
+    tobs.innerHTML = '<div style="padding:20px 12px;text-align:center;color:var(--dim);font-size:10px;font-family:var(\'IBM Plex Mono\',monospace)" id="trade-obs-ph">No active trades to observe</div>';
     return;
   }
   noTrade.style.display='none';
@@ -686,7 +783,14 @@ async function pollFeed() {
       prependFeed(tweet, c.cat);
 
       // [3] Obs — only signal/level events, NOT session banners
-      if (latest.commentary) addObs(latest.commentary, 'signal', latest.price);
+      if (latest.commentary) {
+        addObs(latest.commentary, 'signal', latest.price);
+        // If there's an active trade, mirror commentary to trade obs panel with trade context
+        const tl = document.getElementById('trade-live');
+        if (tl && tl.style.display !== 'none' && tl.innerHTML.trim()) {
+          addTradeObs(latest.commentary, 'signal', latest.price);
+        }
+      }
 
       // Levels
       if (latest.event_type === 'levels_analysis') {
@@ -729,30 +833,16 @@ async function pollTrade() {
     }
     if (tradeRes.status !== 'fulfilled') return;
     const data = await tradeRes.value.json();
-    if (data.open) {
-      const t = data.open;
-      // Use correct side: Short uses ask (what you'd close at), Long uses bid
-      const bbPrice = t.direction === 'Short' ? bbAsk : bbBid;
-      const price = bbPrice || currentPrice || parseFloat(t.entry_price);
-      // Update topbar with mid price
-      if (bbBid && bbAsk) {
-        const mid = (bbBid + bbAsk) / 2;
-        currentPrice = mid;
-        document.getElementById('pv').textContent = '$'+mid.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2});
-      }
-      const pts = t.direction==='Long' ? price-t.entry_price : t.entry_price-price;
-      const pnl = (pts*(t.ppp||1)*(t.size||1)).toFixed(2);
-      const dur = Math.round((Date.now()-t.entry_time)/1000);
-      const durStr = dur<60?dur+'s':Math.floor(dur/60)+'m '+dur%60+'s';
-      updateTradePanel({
-        direction:t.direction,
-        entry:parseFloat(t.entry_price).toFixed(2),
-        currentPrice:price.toFixed(2),
-        points:pts.toFixed(1),
-        pnl,
-        inProfit:pts>0,
-        duration:durStr
-      });
+    // Update topbar price
+    if (bbBid && bbAsk) {
+      currentPrice = (bbBid + bbAsk) / 2;
+      document.getElementById('pv').textContent = '$'+currentPrice.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2});
+    }
+
+    // Support up to 2 open trades
+    const openTrades = data.opens || (data.open ? [data.open] : []);
+    if (openTrades.length > 0) {
+      updateMultiTradePanel(openTrades, bbBid, bbAsk);
     } else {
       updateTradePanel(null);
     }
