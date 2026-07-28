@@ -22,6 +22,7 @@ app.use(express.text({ type: 'text/*' }));
 app.use(express.static(path.join(__dirname, 'public')));
 
 // ─── SANTOSH ANALYST ─────────────────────────────────────────────────────────
+require('./exit-fix')(app);
 require('./analyst')(app);
 
 // ─── WEBHOOK ─────────────────────────────────────────────────────────────────
