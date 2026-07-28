@@ -9,8 +9,9 @@
 // Mount from server.js with:   require('./exit-fix')(app);
 // IT MUST GO ABOVE require('./analyst')(app);
 
-const fs   = require('fs');
-const path = require('path');
+const fs      = require('fs');
+const path    = require('path');
+const express = require('express');
 
 // ─── CONFIG ──────────────────────────────────────────────────────────────────
 const SPREAD      = 12;         // BTCUSD CFD spread in points
@@ -418,5 +419,67 @@ module.exports = function(app) {
     }
   });
 
-  console.log('ExitFix loaded — /api/audit-exits, /api/repair-exits, /analyst-correct-exit');
+  // ── BACKUP / RESTORE ─────────────────────────────────────────────────────
+  // Render's free plan ignores the `disk:` block in render.yaml, so trades.json
+  // lives on the container's ephemeral filesystem. It survives restarts but a
+  // DEPLOY builds a fresh container and starts empty. Take a backup before you
+  // deploy anything, ever.
+
+  // Download the whole journal. Opening this URL in a browser saves a file.
+  app.get('/api/backup', (req, res) => {
+    try {
+      const db    = readDb();
+      const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-');
+      res.setHeader('Content-Disposition', `attachment; filename="trades-backup-${stamp}.json"`);
+      res.setHeader('Content-Type', 'application/json');
+      res.send(JSON.stringify(db, null, 2));
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Put a backup back. Needs ?confirm=1 so it can't fire by accident.
+  // Own body parser — server.js uses the 100kb express.json() default, which a
+  // full journal will exceed once auto_analysis text builds up.
+  app.post('/api/restore', express.json({ limit: '25mb' }), (req, res) => {
+    try {
+      if (req.query.confirm !== '1') {
+        return res.status(400).json({ error: 'add ?confirm=1 to actually restore' });
+      }
+      const incoming = req.body;
+      if (!incoming || !Array.isArray(incoming.trades)) {
+        return res.status(400).json({ error: 'expected a backup file shaped { trades: [...] }' });
+      }
+
+      // Never overwrite without keeping what was there.
+      try {
+        fs.copyFileSync(DB(), DB().replace(/\.(json|db)$/, `.pre-restore-${Date.now()}.json`));
+      } catch {}
+
+      const maxId = incoming.trades.reduce((m, t) => Math.max(m, parseInt(t.id) || 0), 0);
+      const db = {
+        trades:     incoming.trades,
+        executions: incoming.executions || [],
+        nextId:     incoming.nextId || maxId + 1
+      };
+      writeDb(db);
+
+      console.log(`[ExitFix] Restored ${db.trades.length} trades from backup`);
+      res.json({ ok: true, restored: db.trades.length, nextId: db.nextId });
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Say so loudly at boot if the journal came up empty — that is the signature
+  // of a deploy having wiped it.
+  try {
+    const n = (readDb().trades || []).length;
+    if (n) console.log(`[ExitFix] Journal loaded: ${n} trades`);
+    else   console.warn('[ExitFix] Journal is EMPTY at startup. If unexpected, restore via POST /api/restore?confirm=1');
+  } catch {
+    console.warn('[ExitFix] No trades DB found at startup');
+  }
+
+  console.log('ExitFix loaded — /api/audit-exits, /api/repair-exits, /api/backup, /api/restore');
 };
