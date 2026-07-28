@@ -17,6 +17,7 @@ const express = require('express');
 const SPREAD      = 12;         // BTCUSD CFD spread in points
 const BAD_EXIT    = 64158.08;   // the frozen price the old bug wrote
 const MAX_OFFSET  = 600;        // reject calibration if CFD/spot gap exceeds this
+const MAX_OPEN    = 10;         // concurrent open positions (analyst.js used 2)
 const LONG_HOLD_MS = 30 * 60 * 1000;
 
 const DB = () => process.env.DB_PATH || path.join(__dirname, 'trades.json');
@@ -177,6 +178,62 @@ module.exports = function(app) {
       console.log(`[ExitFix] Closed ${ctraderIdStr} exit=$${exitPrice} pts=${points.toFixed(1)} src=${db.trades[idx].exit_source}`);
       res.json({ status: 'closed', trade: db.trades[idx] });
     } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // ── REGISTER OPEN POSITION — never discards a live trade ─────────────────
+  // analyst.js caps open trades at 2 and silently flips the oldest to
+  // 'cancelled' when a third opens. Scaling into three positions therefore
+  // destroys the first one — no exit, no P&L, no record it ever happened.
+  //
+  // This shadows that route: a higher ceiling, and if the ceiling is ever hit
+  // the NEW registration is refused rather than an existing trade being thrown
+  // away. Losing a record you already have is always the worse outcome.
+  app.post('/analyst-register-trade', (req, res) => {
+    try {
+      const incoming = req.body;
+      if (!incoming || !incoming.id || !incoming.direction || !incoming.entry_price) {
+        return res.status(400).json({ error: 'Missing required fields: id, direction, entry_price' });
+      }
+
+      const ctraderId = String(incoming.id);
+      const db = readDb();
+
+      // Idempotent — the extension re-registers on every reload.
+      const existing = db.trades.find(t => t.ctrader_id === ctraderId && t.status === 'open');
+      if (existing) return res.json({ status: 'already_registered', trade: existing });
+
+      const openCount = db.trades.filter(t => t.status === 'open').length;
+      if (openCount >= MAX_OPEN) {
+        console.warn(`[ExitFix] ${openCount} trades already open — refusing ${ctraderId}. Nothing cancelled.`);
+        return res.status(429).json({
+          error: `open trade limit (${MAX_OPEN}) reached — refused the new one rather than discarding an existing trade`
+        });
+      }
+
+      const trade = {
+        id:          db.nextId++,
+        ctrader_id:  ctraderId,
+        direction:   incoming.direction,
+        entry_price: parseFloat(incoming.entry_price),
+        entry_time:  incoming.entry_time || Date.now(),
+        exit_price:  null,
+        exit_time:   null,
+        size:        parseFloat(incoming.size) || 0.01,
+        ppp:         parseFloat(incoming.ppp) || 1,
+        points:      null,
+        pnl:         null,
+        status:      'open',
+        source:      'extension_auto'
+      };
+      db.trades.push(trade);
+      writeDb(db);
+
+      console.log(`[ExitFix] Registered ${trade.direction} $${trade.entry_price} ctrader_id=${ctraderId} (${openCount + 1} open)`);
+      res.json({ status: 'registered', trade });
+    } catch (err) {
+      console.error('[ExitFix] Register error:', err.message);
       res.status(500).json({ error: err.message });
     }
   });
