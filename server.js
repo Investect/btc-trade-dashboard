@@ -22,7 +22,8 @@ app.use(express.text({ type: 'text/*' }));
 app.use(express.static(path.join(__dirname, 'public')));
 
 // ─── SANTOSH ANALYST ─────────────────────────────────────────────────────────
-require('./exit-fix')(app);
+require('./exit-fix')(app);      // must stay above analyst
+require('./intel-multi')(app);   // shadows /api/intel for non-crypto symbols
 require('./analyst')(app);
 
 // ─── WEBHOOK ─────────────────────────────────────────────────────────────────

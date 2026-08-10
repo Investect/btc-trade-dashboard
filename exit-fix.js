@@ -1,10 +1,13 @@
-// exit-fix.js — exit price integrity for the BTC scalp journal
+// exit-fix.js — exit price integrity for the multi-instrument scalp journal
 //
-// Two jobs:
+// Three jobs:
 //   1. /analyst-correct-exit  — overwrite an estimated exit with the exact
 //                               broker fill when the extension later sees it.
 //   2. /api/repair-exits      — rebuild the exit prices that the old
 //                               `latestAMNData.price` fallback fabricated.
+//   3. Per-symbol integrity   — every trade carries its ticker, its asset
+//                               class and its own point value, so gold, FX,
+//                               indices and share CFDs all book correct P&L.
 //
 // Mount from server.js with:   require('./exit-fix')(app);
 // IT MUST GO ABOVE require('./analyst')(app);
@@ -14,11 +17,17 @@ const path    = require('path');
 const express = require('express');
 
 // ─── CONFIG ──────────────────────────────────────────────────────────────────
-const SPREAD      = 12;         // BTCUSD CFD spread in points
+const SPREAD      = 12;         // BTCUSD CFD spread in points (repair path only)
 const BAD_EXIT    = 64158.08;   // the frozen price the old bug wrote
 const MAX_OFFSET  = 600;        // reject calibration if CFD/spot gap exceeds this
 const MAX_OPEN    = 10;         // concurrent open positions (analyst.js used 2)
 const LONG_HOLD_MS = 30 * 60 * 1000;
+
+// A scalp that claims to have moved more than this fraction of the entry price
+// is almost certainly a data fault, not a trade. Expressed as a percentage
+// rather than the old flat 400 points, because 400 points means something
+// entirely different on EURUSD than it does on BTCUSD.
+const SUSPICIOUS_PCT = 0.03;
 
 const DB = () => process.env.DB_PATH || path.join(__dirname, 'trades.json');
 
@@ -29,11 +38,56 @@ function writeDb(db) {
   fs.writeFileSync(DB(), JSON.stringify(db, null, 2));
 }
 
+// ─── SYMBOL METADATA ─────────────────────────────────────────────────────────
+// Display convention only. Money is computed from `ppp`, which the extension
+// measures from the broker's own unrealised P&L, so a wrong guess here changes
+// how a number is labelled, never what it is worth.
+const FX_CCY = /^(AUD|CAD|CHF|CNH|CZK|DKK|EUR|GBP|HKD|HUF|JPY|MXN|NOK|NZD|PLN|SEK|SGD|TRY|USD|ZAR)$/;
+
+function normSymbol(raw) {
+  return String(raw || '').trim().toUpperCase()
+    .replace(/\s+/g, '')
+    .replace(/[._\-#][A-Z0-9]{1,5}$/, '');
+}
+
+function classify(key) {
+  if (/^(XAU|GOLD)/.test(key))   return 'metal_gold';
+  if (/^(XAG|SILVER)/.test(key)) return 'metal_silver';
+  if (/^(XPT|XPD)/.test(key))    return 'metal_other';
+  if (/^(BTC|ETH|XRP|LTC|SOL|ADA|DOGE|BCH|DOT|AVAX|LINK)/.test(key)) return 'crypto';
+  if (key.length === 6 && FX_CCY.test(key.slice(0, 3)) && FX_CCY.test(key.slice(3))) return 'fx';
+  if (/^(US30|US500|USTEC|NAS100|SPX500|GER40|DE40|UK100|JP225|AUS200|FRA40|EU50|HK50)/.test(key)) return 'index';
+  if (/^(WTI|BRENT|UKOIL|USOIL|NGAS|XTI|XBR)/.test(key)) return 'energy';
+  return 'stock';
+}
+
+function pipSizeFor(key) {
+  switch (classify(key)) {
+    case 'metal_gold':   return 0.01;
+    case 'metal_silver': return 0.001;
+    case 'metal_other':  return 0.01;
+    case 'crypto':       return 1;
+    case 'fx':           return key.includes('JPY') ? 0.01 : 0.0001;
+    case 'index':        return 1;
+    case 'energy':       return 0.01;
+    default:             return 0.01;
+  }
+}
+
+// `points` stays the raw price difference — the same meaning it has always had
+// for BTC, so nothing already in the journal needs migrating. `pip_points` is
+// that difference expressed in the instrument's own convention, which is what
+// you actually want to read on a EURUSD or XAUUSD row.
 function recompute(trade, exitPrice) {
   const pts = trade.direction === 'Long'
     ? exitPrice - trade.entry_price
     : trade.entry_price - exitPrice;
-  return { points: pts, pnl: pts * (trade.ppp || 1) * (trade.size || 1) };
+  const pip = trade.pip_size || pipSizeFor(trade.symbol || 'BTCUSD');
+  return {
+    points:     pts,
+    pip_points: +(pts / pip).toFixed(1),
+    pnl:        pts * (trade.ppp || 1) * (trade.size || 1)
+  };
 }
 
 // ─── BINANCE 1-SECOND PRICE LOOKUP ───────────────────────────────────────────
@@ -152,13 +206,22 @@ module.exports = function(app) {
 
       const trade = db.trades[idx];
 
-      // Sanity guard: a BTC scalp does not move 400 points. If it claims to,
-      // something upstream is wrong — record it but flag it rather than let it
-      // quietly wreck the stats.
-      const { points, pnl } = recompute(trade, exitPrice);
-      const suspicious = Math.abs(points) > 400;
+      // The extension re-sends the point value on close, because it may have
+      // been calibrated more precisely since the position was opened.
+      const ppp = parseFloat(req.body.ppp);
+      if (Number.isFinite(ppp) && ppp > 0) {
+        trade.ppp        = ppp;
+        trade.ppp_source = req.body.ppp_source || trade.ppp_source;
+      }
+
+      // Sanity guard, now relative to the instrument. A 3% move inside a scalp
+      // means something upstream is wrong — record it but flag it rather than
+      // let it quietly wreck the stats.
+      const { points, pip_points, pnl } = recompute(trade, exitPrice);
+      const suspicious = Math.abs(points) > trade.entry_price * SUSPICIOUS_PCT;
       if (suspicious) {
-        console.warn(`[ExitFix] Suspicious close ${ctraderIdStr}: ${points.toFixed(1)} pts — flagged`);
+        console.warn(`[ExitFix] Suspicious close ${ctraderIdStr} ${trade.symbol || '?'}: ` +
+                     `${pip_points} pts (${(100 * points / trade.entry_price).toFixed(1)}%) — flagged`);
       }
 
       db.trades[idx] = {
@@ -169,13 +232,19 @@ module.exports = function(app) {
         exit_source: req.body.exit_source || 'quote',
         exit_bid:    req.body.bid ?? null,
         exit_ask:    req.body.ask ?? null,
+        // The broker's own last unrealised figure. Not directly comparable to
+        // realised P&L — it misses the final tick and any closing commission —
+        // but a large gap is worth seeing.
+        broker_pl_last: req.body.broker_pl_last ?? null,
         suspicious:  suspicious || undefined,
         points,
+        pip_points,
         pnl
       };
       writeDb(db);
 
-      console.log(`[ExitFix] Closed ${ctraderIdStr} exit=$${exitPrice} pts=${points.toFixed(1)} src=${db.trades[idx].exit_source}`);
+      console.log(`[ExitFix] Closed ${trade.symbol || '?'} ${ctraderIdStr} exit=${exitPrice} ` +
+                  `pts=${pip_points} pnl=$${pnl.toFixed(2)} src=${db.trades[idx].exit_source}`);
       res.json({ status: 'closed', trade: db.trades[idx] });
     } catch (err) {
       res.status(500).json({ error: err.message });
@@ -212,9 +281,20 @@ module.exports = function(app) {
         });
       }
 
+      // Ticker is first-class now. If the extension somehow omits it, fall back
+      // to BTCUSD rather than storing a blank — but say so, because a blank
+      // ticker means the capture side needs looking at.
+      const symbol = normSymbol(incoming.symbol || incoming.symbol_raw);
+      if (!symbol) console.warn(`[ExitFix] Register ${ctraderId} arrived with no symbol — defaulting to BTCUSD`);
+      const key = symbol || 'BTCUSD';
+
       const trade = {
         id:          db.nextId++,
         ctrader_id:  ctraderId,
+        symbol:      key,
+        symbol_raw:  incoming.symbol_raw || key,
+        asset_class: incoming.asset_class || classify(key),
+        pip_size:    parseFloat(incoming.pip_size) || pipSizeFor(key),
         direction:   incoming.direction,
         entry_price: parseFloat(incoming.entry_price),
         entry_time:  incoming.entry_time || Date.now(),
@@ -222,7 +302,9 @@ module.exports = function(app) {
         exit_time:   null,
         size:        parseFloat(incoming.size) || 0.01,
         ppp:         parseFloat(incoming.ppp) || 1,
+        ppp_source:  incoming.ppp_source || 'default',
         points:      null,
+        pip_points:  null,
         pnl:         null,
         status:      'open',
         source:      'extension_auto'
@@ -230,7 +312,8 @@ module.exports = function(app) {
       db.trades.push(trade);
       writeDb(db);
 
-      console.log(`[ExitFix] Registered ${trade.direction} $${trade.entry_price} ctrader_id=${ctraderId} (${openCount + 1} open)`);
+      console.log(`[ExitFix] Registered ${key} ${trade.direction} ${trade.size} @ ${trade.entry_price} ` +
+                  `ppp=$${trade.ppp}(${trade.ppp_source}) ctrader_id=${ctraderId} (${openCount + 1} open)`);
       res.json({ status: 'registered', trade });
     } catch (err) {
       console.error('[ExitFix] Register error:', err.message);
@@ -258,8 +341,14 @@ module.exports = function(app) {
         return res.json({ status: 'already_exact' });
       }
 
+      // Backfill the ticker if this trade predates symbol-aware capture.
+      if (!trade.symbol && req.body.symbol) {
+        trade.symbol   = normSymbol(req.body.symbol);
+        trade.pip_size = trade.pip_size || pipSizeFor(trade.symbol);
+      }
+
       const before = trade.exit_price;
-      const { points, pnl } = recompute(trade, exitPrice);
+      const { points, pip_points, pnl } = recompute(trade, exitPrice);
 
       db.trades[idx] = {
         ...trade,
@@ -269,12 +358,13 @@ module.exports = function(app) {
         exit_source:         'execution',
         exit_price_estimate: before,
         points,
+        pip_points,
         pnl
       };
       writeDb(db);
 
-      const drift = before ? +(exitPrice - before).toFixed(2) : null;
-      console.log(`[ExitFix] Exact fill applied ${ctraderId}: ${before} -> ${exitPrice} (drift ${drift})`);
+      const drift = before ? +(exitPrice - before).toFixed(5) : null;
+      console.log(`[ExitFix] Exact fill applied ${trade.symbol || '?'} ${ctraderId}: ${before} -> ${exitPrice} (drift ${drift})`);
       res.json({ status: 'corrected', from: before, to: exitPrice, drift, trade: db.trades[idx] });
     } catch (err) {
       res.status(500).json({ error: err.message });
@@ -312,16 +402,108 @@ module.exports = function(app) {
     }
   });
 
+  // ── Full journal, optionally filtered by ticker ───────────────────────────
+  // server.js's /api/trades returns only ONE open trade (`.find`), which was
+  // fine when everything was BTC and you held one position. Trading several
+  // instruments at once makes that actively misleading, so this returns every
+  // open position rather than an arbitrary first one.
+  app.get('/api/journal', (req, res) => {
+    try {
+      const db     = readDb();
+      const symbol = req.query.symbol ? normSymbol(req.query.symbol) : null;
+
+      const match = t => !symbol || (t.symbol || 'BTCUSD') === symbol;
+      const rows  = db.trades.filter(match);
+
+      const closed = rows.filter(t => t.status === 'closed')
+                         .sort((a, b) => (b.exit_time || 0) - (a.exit_time || 0));
+      const open   = rows.filter(t => t.status === 'open')
+                         .sort((a, b) => (b.entry_time || 0) - (a.entry_time || 0));
+
+      const pnls = closed.map(t => t.pnl).filter(v => Number.isFinite(v));
+      const net  = pnls.reduce((s, v) => s + v, 0);
+      const wins = pnls.filter(v => v > 0).length;
+
+      res.json({
+        ok: true,
+        filter: symbol,
+        open,
+        closed,
+        cancelled: rows.filter(t => t.status === 'cancelled').length,
+        stats: {
+          total:    closed.length,
+          wins,
+          losses:   pnls.filter(v => v < 0).length,
+          win_rate: pnls.length ? +(100 * wins / pnls.length).toFixed(1) : null,
+          net_pnl:  +net.toFixed(2),
+          avg_pnl:  pnls.length ? +(net / pnls.length).toFixed(2) : null,
+          best:     pnls.length ? +Math.max(...pnls).toFixed(2) : null,
+          worst:    pnls.length ? +Math.min(...pnls).toFixed(2) : null
+        }
+      });
+    } catch (err) {
+      res.status(500).json({ ok: false, error: err.message });
+    }
+  });
+
+  // ── Which tickers have been traded, and how each one is doing ────────────
+  // Drives the dashboard's instrument filter and the Intel panel's symbol
+  // picker, so the list is always exactly what you have actually traded.
+  app.get('/api/symbols', (req, res) => {
+    try {
+      const db = readDb();
+      const bySymbol = new Map();
+
+      for (const t of db.trades) {
+        const key = t.symbol || 'BTCUSD';
+        if (!bySymbol.has(key)) {
+          bySymbol.set(key, {
+            symbol:      key,
+            asset_class: t.asset_class || classify(key),
+            pip_size:    t.pip_size || pipSizeFor(key),
+            ppp:         t.ppp || null,
+            ppp_source:  t.ppp_source || null,
+            trades: 0, open: 0, closed: 0, wins: 0, losses: 0,
+            net_pnl: 0, last_traded: 0
+          });
+        }
+        const s = bySymbol.get(key);
+        s.trades++;
+        if (t.status === 'open')   s.open++;
+        if (t.status === 'closed') {
+          s.closed++;
+          if (t.pnl > 0) s.wins++;
+          if (t.pnl < 0) s.losses++;
+          s.net_pnl += t.pnl || 0;
+        }
+        s.last_traded = Math.max(s.last_traded, t.exit_time || t.entry_time || 0);
+        if (t.ppp) { s.ppp = t.ppp; s.ppp_source = t.ppp_source || s.ppp_source; }
+      }
+
+      const symbols = [...bySymbol.values()]
+        .map(s => ({ ...s, net_pnl: +s.net_pnl.toFixed(2) }))
+        .sort((a, b) => b.last_traded - a.last_traded);
+
+      res.json({ ok: true, count: symbols.length, symbols });
+    } catch (err) {
+      res.status(500).json({ ok: false, error: err.message });
+    }
+  });
+
   // ── Rebuild the fabricated exits ─────────────────────────────────────────
   // Dry run by default. Add ?apply=1 to actually write.
   app.post('/api/repair-exits', async (req, res) => {
     const apply = req.query.apply === '1';
     try {
       const db      = readDb();
+      // The reconstruction calibrates against Binance BTCUSDT, so it is only
+      // valid for BTC trades. Any other instrument corrupted by the old bug
+      // would need its own reference feed — refuse rather than guess.
       const targets = db.trades.filter(t =>
         t.status === 'closed' &&
         t.exit_price === BAD_EXIT &&
-        t.exit_source !== 'execution'
+        t.exit_source !== 'execution' &&
+        (!t.symbol || /^BTC/.test(t.symbol))
       );
 
       if (!targets.length) return res.json({ ok: true, message: 'Nothing to repair', repaired: 0 });
@@ -538,5 +720,5 @@ module.exports = function(app) {
     console.warn('[ExitFix] No trades DB found at startup');
   }
 
-  console.log('ExitFix loaded — /api/audit-exits, /api/repair-exits, /api/backup, /api/restore');
+  console.log('ExitFix loaded (multi-instrument) — /api/symbols, /api/audit-exits, /api/repair-exits, /api/backup, /api/restore');
 };
