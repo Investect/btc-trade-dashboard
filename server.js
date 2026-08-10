@@ -17,7 +17,7 @@ if (!fs.existsSync(DB)) writeDb({ trades: [], executions: [], nextId: 1 });
 
 // ─── MIDDLEWARE ──────────────────────────────────────────────────────────────
 app.use(cors());
-app.use(express.json());
+app.use(express.json({ limit: '10mb' }));
 app.use(express.text({ type: 'text/*' }));
 app.use(express.static(path.join(__dirname, 'public')));
 
