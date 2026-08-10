@@ -17,6 +17,9 @@ if (!fs.existsSync(DB)) writeDb({ trades: [], executions: [], nextId: 1 });
 
 // ─── MIDDLEWARE ──────────────────────────────────────────────────────────────
 app.use(cors());
+// Was the express default (100kb) — silently shadowed exit-fix.js's own 25mb
+// override on /api/restore because this global parser runs first for every
+// request. A 107-trade journal backup is ~140KB, so restore was failing.
 app.use(express.json({ limit: '10mb' }));
 app.use(express.text({ type: 'text/*' }));
 app.use(express.static(path.join(__dirname, 'public')));
@@ -24,6 +27,7 @@ app.use(express.static(path.join(__dirname, 'public')));
 // ─── SANTOSH ANALYST ─────────────────────────────────────────────────────────
 require('./exit-fix')(app);      // must stay above analyst
 require('./intel-multi')(app);   // shadows /api/intel for non-crypto symbols
+require('./tradovate')(app);     // no-ops until TRADOVATE_* env vars are set
 require('./analyst')(app);
 
 // ─── WEBHOOK ─────────────────────────────────────────────────────────────────
