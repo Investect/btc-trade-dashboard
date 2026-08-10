@@ -1,0 +1,382 @@
+<!DOCTYPE html>
+<!--
+  v2.html — multi-instrument scalp journal + intel
+
+  Drop this in the repo at public/v2.html. server.js already serves the public
+  folder statically, so it appears at /v2.html with no server change.
+
+  The original index.html is left untouched and keeps working. This page reads:
+    /api/symbols            (exit-fix.js)  tickers you have actually traded
+    /api/journal?symbol=    (exit-fix.js)  trades, filtered
+    /api/intel?symbol=      (intel-multi)  news for the selected instrument
+    /api/intel/universe     (intel-multi)  instruments offered before first trade
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Scalp Journal — All Instruments</title>
+<style>
+  :root{
+    --bg:#0a0e14; --panel:#111823; --panel2:#0d141d; --line:#1e2836;
+    --txt:#d7e0ea; --dim:#7b8a9c; --accent:#4da3ff;
+    --up:#26d17c; --down:#ff5c6c; --warn:#ffb648;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--txt);
+       font:14px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif}
+  a{color:var(--accent);text-decoration:none}
+  .wrap{max-width:1240px;margin:0 auto;padding:18px}
+  .panel{background:var(--panel);border:1px solid var(--line);border-radius:10px;
+         padding:16px;margin-bottom:16px}
+  h1{font-size:17px;margin:0;letter-spacing:.5px}
+  h2{font-size:12px;letter-spacing:1.4px;text-transform:uppercase;color:var(--dim);
+     margin:0 0 12px}
+  .row{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+  .spacer{flex:1}
+  .muted{color:var(--dim)}
+  .mono{font-variant-numeric:tabular-nums;
+        font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+
+  /* ── instrument picker ─────────────────────────────────────────────── */
+  .chips{display:flex;gap:6px;flex-wrap:wrap;margin-top:10px}
+  .chip{background:var(--panel2);border:1px solid var(--line);color:var(--dim);
+        padding:5px 11px;border-radius:20px;cursor:pointer;font-size:12px;
+        white-space:nowrap;transition:.12s}
+  .chip:hover{border-color:var(--accent);color:var(--txt)}
+  .chip.on{background:var(--accent);border-color:var(--accent);color:#04121f;font-weight:600}
+  .chip .pl{margin-left:6px;font-size:11px}
+  select,input{background:var(--panel2);border:1px solid var(--line);color:var(--txt);
+               padding:8px 10px;border-radius:6px;font-size:13px;outline:none}
+  select:focus,input:focus{border-color:var(--accent)}
+  .grp{font-size:11px;color:var(--dim);text-transform:uppercase;letter-spacing:1px;
+       margin:12px 0 4px}
+
+  /* ── intel ─────────────────────────────────────────────────────────── */
+  .intel-item{border-left:3px solid var(--line);padding:9px 0 9px 12px;margin-bottom:9px}
+  .intel-item.s5{border-color:var(--down)}
+  .intel-item.s4{border-color:var(--warn)}
+  .intel-item.s3{border-color:var(--accent)}
+  .ih{font-weight:600;margin-bottom:3px}
+  .meta{font-size:11px;color:var(--dim);display:flex;gap:8px;flex-wrap:wrap}
+  .badge{background:var(--panel2);border:1px solid var(--line);border-radius:4px;
+         padding:1px 6px;font-size:10px;letter-spacing:.5px;text-transform:uppercase}
+  .badge.market{border-color:#3a4a5e;color:#8fa4bb}
+  .bul{margin:6px 0 0;padding-left:16px;font-size:12.5px;color:#a9b8c9}
+  .bul li{margin-bottom:2px}
+
+  /* ── stats ─────────────────────────────────────────────────────────── */
+  .stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:10px}
+  .stat{background:var(--panel2);border:1px solid var(--line);border-radius:8px;
+        padding:11px 13px}
+  .stat .k{font-size:10px;letter-spacing:1.2px;text-transform:uppercase;color:var(--dim)}
+  .stat .v{font-size:19px;font-weight:650;margin-top:3px}
+
+  /* ── table ─────────────────────────────────────────────────────────── */
+  .tabs{display:flex;gap:4px;margin-bottom:14px}
+  .tab{padding:7px 15px;border-radius:7px;cursor:pointer;font-size:13px;color:var(--dim);
+       border:1px solid transparent}
+  .tab.on{background:var(--panel2);border-color:var(--line);color:var(--txt)}
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  th{text-align:left;font-size:10px;letter-spacing:1.1px;text-transform:uppercase;
+     color:var(--dim);font-weight:600;padding:0 10px 8px;border-bottom:1px solid var(--line)}
+  td{padding:9px 10px;border-bottom:1px solid #16202c}
+  tr:hover td{background:#0f1621}
+  th.n,td.n{text-align:right}
+  .tk{font-weight:650;letter-spacing:.4px}
+  .up{color:var(--up)} .down{color:var(--down)}
+  .pill{font-size:10px;padding:1px 6px;border-radius:4px;border:1px solid var(--line);
+        color:var(--dim)}
+  .pill.exec{border-color:var(--up);color:var(--up)}
+  .pill.est{border-color:var(--warn);color:var(--warn)}
+  .empty{text-align:center;color:var(--dim);padding:30px 0}
+  .err{color:var(--warn);font-size:12px}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <!-- ── header + instrument picker ───────────────────────────────────── -->
+  <div class="panel">
+    <div class="row">
+      <h1>SCALP JOURNAL</h1>
+      <span class="muted" id="cls">—</span>
+      <div class="spacer"></div>
+      <input id="search" placeholder="Any ticker…  AAPL, XAUUSD, EURUSD" style="width:230px">
+      <select id="universe"><option value="">Browse instruments…</option></select>
+      <span class="muted mono" id="status">connecting…</span>
+    </div>
+    <div class="chips" id="traded"></div>
+  </div>
+
+  <!-- ── intel ────────────────────────────────────────────────────────── -->
+  <div class="panel">
+    <div class="row" style="margin-bottom:12px">
+      <h2 style="margin:0" id="intelTitle">INTEL</h2>
+      <div class="spacer"></div>
+      <span class="muted mono" id="quote"></span>
+      <span class="muted" id="intelAge"></span>
+    </div>
+    <div id="intel"><div class="empty">loading…</div></div>
+    <div class="err" id="intelErr"></div>
+  </div>
+
+  <!-- ── stats ────────────────────────────────────────────────────────── -->
+  <div class="panel">
+    <div class="stats" id="stats"></div>
+  </div>
+
+  <!-- ── trades ───────────────────────────────────────────────────────── -->
+  <div class="panel">
+    <div class="tabs">
+      <div class="tab on" data-tab="live">⚡ Live</div>
+      <div class="tab" data-tab="diary">📖 Diary</div>
+      <div class="tab" data-tab="history">📋 History</div>
+    </div>
+    <div id="trades"></div>
+  </div>
+
+  <div class="muted" style="font-size:11px;text-align:center;padding-bottom:20px">
+    Trades log automatically for every instrument · point values are calibrated from
+    the broker's own P&amp;L · <a href="/">original dashboard</a>
+  </div>
+</div>
+
+<script>
+// ═══════════════════════════════════════════════════════════════════════════
+// STATE
+// ═══════════════════════════════════════════════════════════════════════════
+let symbol  = localStorage.getItem('sj_symbol') || 'BTCUSD';
+let tab     = 'live';
+let journal = null;
+let symbols = [];
+
+const $  = s => document.querySelector(s);
+const el = (t, c, h) => { const e = document.createElement(t); if (c) e.className = c;
+                          if (h != null) e.innerHTML = h; return e; };
+
+async function api(path) {
+  const r = await fetch(path);
+  if (!r.ok) throw new Error(path + ' → ' + r.status);
+  return r.json();
+}
+
+// FX needs five decimals to be readable; everything else looks silly with them.
+function dp(sym) { return /^[A-Z]{6}$/.test(sym) && !sym.includes('JPY') ? 5
+                        : sym.includes('JPY') ? 3 : 2; }
+const fmt  = (v, d) => v == null ? '—' : Number(v).toFixed(d);
+const money = v => v == null ? '—' : (v < 0 ? '-$' : '$') + Math.abs(v).toFixed(2);
+const cls   = v => v > 0 ? 'up' : v < 0 ? 'down' : '';
+
+// ═══════════════════════════════════════════════════════════════════════════
+// INSTRUMENT PICKER
+// ═══════════════════════════════════════════════════════════════════════════
+// Two ways in, because they answer different questions. The chips are what you
+// have actually traded, which is what you want 95% of the time. The search box
+// and the browse list cover the instrument you are about to trade for the
+// first time — nothing needs configuring before a new ticker works.
+
+async function loadSymbols() {
+  try {
+    const d = await api('/api/symbols');
+    symbols = d.symbols || [];
+  } catch { symbols = []; }
+
+  const box = $('#traded');
+  box.innerHTML = '';
+  if (!symbols.length) {
+    box.appendChild(el('span', 'muted', 'No trades recorded yet — trade anything and it appears here.'));
+  }
+  for (const s of symbols) {
+    const c = el('div', 'chip' + (s.symbol === symbol ? ' on' : ''));
+    c.innerHTML = `${s.symbol}<span class="pl ${cls(s.net_pnl)}">${money(s.net_pnl)}</span>`;
+    c.title = `${s.closed} closed · ${s.wins}W/${s.losses}L · ppp $${s.ppp ?? '?'} (${s.ppp_source || '?'})`;
+    c.onclick = () => setSymbol(s.symbol);
+    box.appendChild(c);
+  }
+}
+
+async function loadUniverse() {
+  try {
+    const d = await api('/api/intel/universe');
+    const sel = $('#universe');
+    for (const g of d.groups) {
+      const og = el('optgroup'); og.label = g.label;
+      for (const s of g.symbols) { const o = el('option', null, s); o.value = s; og.appendChild(o); }
+      sel.appendChild(og);
+    }
+    sel.onchange = e => { if (e.target.value) setSymbol(e.target.value); e.target.value = ''; };
+  } catch {}
+}
+
+$('#search').addEventListener('keydown', e => {
+  if (e.key === 'Enter' && e.target.value.trim()) {
+    setSymbol(e.target.value.trim().toUpperCase());
+    e.target.value = '';
+  }
+});
+
+function setSymbol(s) {
+  symbol = s;
+  localStorage.setItem('sj_symbol', s);
+  document.querySelectorAll('#traded .chip').forEach(c =>
+    c.classList.toggle('on', c.textContent.startsWith(s)));
+  refresh();
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// INTEL
+// ═══════════════════════════════════════════════════════════════════════════
+async function loadIntel() {
+  $('#intelTitle').textContent = symbol + ' INTEL';
+  $('#intelErr').textContent = '';
+  try {
+    const d = await api('/api/intel?symbol=' + encodeURIComponent(symbol));
+    $('#cls').textContent = d.asset_class ? '· ' + d.asset_class.replace('_', ' ') : '';
+
+    if (d.quote) {
+      const q = d.quote, p = dp(symbol);
+      $('#quote').innerHTML =
+        `${fmt(q.close, p)} <span class="${cls(q.change_pct)}">` +
+        `${q.change_pct >= 0 ? '+' : ''}${q.change_pct}%</span>`;
+    } else $('#quote').textContent = '';
+
+    const box = $('#intel');
+    box.innerHTML = '';
+    const items = d.items || [];
+    if (!items.length) { box.appendChild(el('div', 'empty', 'No headlines right now.')); return; }
+
+    for (const it of items) {
+      const w = el('div', 'intel-item s' + (it.score || 1));
+      const h = it.url ? `<a href="${it.url}" target="_blank" rel="noopener">${it.headline}</a>`
+                       : it.headline;
+      w.appendChild(el('div', 'ih', h));
+      w.appendChild(el('div', 'meta',
+        `<span class="badge${it.scope === 'market' ? ' market' : ''}">` +
+        `${it.scope === 'market' ? 'market-wide' : it.category || 'news'}</span>` +
+        `<span>${it.source || ''}</span><span>${ago(it.pubDate)}</span>` +
+        `<span>impact ${it.score || 1}/5</span>`));
+      if (it.bullets && it.bullets.length) {
+        w.appendChild(el('ul', 'bul', it.bullets.map(b => `<li>${b}</li>`).join('')));
+      }
+      box.appendChild(w);
+    }
+
+    // Say when a source is down rather than silently showing a thin panel.
+    const dead = (d.sources || []).filter(s => !s.ok);
+    if (dead.length) $('#intelErr').textContent =
+      'Feeds unavailable: ' + dead.map(s => s.name).join(', ');
+    $('#intelAge').textContent = 'updated ' + new Date().toLocaleTimeString();
+  } catch (e) {
+    $('#intel').innerHTML = '<div class="empty">Intel unavailable</div>';
+    $('#intelErr').textContent = e.message;
+  }
+}
+
+function ago(d) {
+  const s = (Date.now() - new Date(d).getTime()) / 1000;
+  if (!isFinite(s)) return '';
+  if (s < 90) return 'just now';
+  if (s < 5400) return Math.round(s / 60) + 'm ago';
+  if (s < 172800) return Math.round(s / 3600) + 'h ago';
+  return Math.round(s / 86400) + 'd ago';
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// JOURNAL
+// ═══════════════════════════════════════════════════════════════════════════
+async function loadJournal() {
+  try {
+    // Live tab shows every instrument at once — you want to see the whole book.
+    // Diary and History respect the selected ticker.
+    const q = tab === 'live' ? '' : '?symbol=' + encodeURIComponent(symbol);
+    journal = await api('/api/journal' + q);
+    $('#status').textContent = 'connected';
+    renderStats();
+    renderTrades();
+  } catch (e) {
+    $('#status').textContent = 'offline';
+    $('#trades').innerHTML = `<div class="empty">Journal unavailable — ${e.message}</div>`;
+  }
+}
+
+function renderStats() {
+  const s = journal.stats;
+  const scope = tab === 'live' ? 'all instruments' : symbol;
+  const cards = [
+    ['Net P&L ' + scope, money(s.net_pnl), cls(s.net_pnl)],
+    ['Win rate', s.win_rate == null ? '—' : s.win_rate + '%', ''],
+    ['W / L', `${s.wins} / ${s.losses}`, ''],
+    ['Trades', s.total, ''],
+    ['Best', money(s.best), 'up'],
+    ['Worst', money(s.worst), 'down'],
+  ];
+  $('#stats').innerHTML = cards.map(([k, v, c]) =>
+    `<div class="stat"><div class="k">${k}</div><div class="v ${c}">${v}</div></div>`).join('');
+}
+
+function rowsFor() {
+  if (!journal) return [];
+  if (tab === 'live')    return journal.open;
+  if (tab === 'history') return journal.closed;
+  // Diary: today only.
+  const start = new Date(); start.setHours(0, 0, 0, 0);
+  return journal.closed.filter(t => (t.exit_time || 0) >= start.getTime());
+}
+
+function renderTrades() {
+  const rows = rowsFor();
+  const live = tab === 'live';
+  if (!rows.length) {
+    $('#trades').innerHTML = `<div class="empty">${
+      live ? 'No open positions — trade as normal, the journal fills itself.'
+           : 'No trades' + (tab === 'diary' ? ' today' : '') + ' for ' + symbol}</div>`;
+    return;
+  }
+
+  const head = `<tr><th>#</th><th>Ticker</th><th>Dir</th><th>Date</th><th>Time</th>
+    <th class="n">Entry</th><th class="n">${live ? '' : 'Exit'}</th>
+    <th class="n">${live ? 'Size' : 'Points'}</th><th class="n">${live ? '' : 'Size'}</th>
+    <th class="n">${live ? '' : 'P&L'}</th><th></th></tr>`;
+
+  const body = rows.map(t => {
+    const p  = dp(t.symbol || 'BTCUSD');
+    const ts = new Date(live ? t.entry_time : (t.exit_time || t.entry_time));
+    const src = t.exit_source === 'execution' ? '<span class="pill exec">exact</span>'
+              : t.exit_source ? '<span class="pill est">est</span>' : '';
+    return `<tr>
+      <td class="mono muted">${t.id}</td>
+      <td class="tk">${t.symbol || 'BTCUSD'}</td>
+      <td class="${t.direction === 'Long' ? 'up' : 'down'}">${t.direction}</td>
+      <td class="mono muted">${ts.toLocaleDateString()}</td>
+      <td class="mono muted">${ts.toLocaleTimeString()}</td>
+      <td class="mono n">${fmt(t.entry_price, p)}</td>
+      <td class="mono n">${live ? '' : fmt(t.exit_price, p)}</td>
+      <td class="mono n ${live ? '' : cls(t.points)}">${
+        live ? t.size : (t.pip_points ?? fmt(t.points, 1))}</td>
+      <td class="mono n">${live ? '' : t.size}</td>
+      <td class="mono n ${live ? '' : cls(t.pnl)}">${live ? '' : money(t.pnl)}</td>
+      <td>${live ? '' : src}${t.suspicious ? ' <span class="pill est">check</span>' : ''}</td>
+    </tr>`;
+  }).join('');
+
+  $('#trades').innerHTML = `<table>${head}${body}</table>`;
+}
+
+document.querySelectorAll('.tab').forEach(t => t.onclick = () => {
+  document.querySelectorAll('.tab').forEach(x => x.classList.remove('on'));
+  t.classList.add('on');
+  tab = t.dataset.tab;
+  loadJournal();
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+async function refresh() { await Promise.all([loadJournal(), loadIntel()]); loadSymbols(); }
+
+loadUniverse();
+refresh();
+setInterval(loadJournal, 5000);    // positions change fast
+setInterval(loadIntel, 60000);     // news does not
+</script>
+</body>
+</html>
