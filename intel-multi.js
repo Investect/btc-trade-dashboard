@@ -35,6 +35,17 @@ function normSymbol(raw) {
 }
 
 function classify(key) {
+  // Continuous-futures-contract tickers (TradingView/prop-firm style: ES1,
+  // MGC1, CL1, MCL1, ...) — these have no dedicated free tick feed, but the
+  // underlying instrument's spot/cash equivalent is a reasonable, honestly-
+  // labelled proxy for price+news. Checked ahead of the generic patterns so
+  // they don't fall through to the 'stock' default and 404 against Stooq.
+  if (/^M?ES1/.test(key))        return 'index';       // ES1/MES1 — S&P 500 e-mini/micro
+  if (/^M?YM1/.test(key))        return 'index';        // YM1/MYM1 — Dow e-mini/micro
+  if (/^M?NQ1/.test(key))        return 'index';        // NQ1/MNQ1 — Nasdaq e-mini/micro
+  if (/^M?GC1/.test(key))        return 'metal_gold';   // GC1/MGC1 — Gold future/micro
+  if (/^M?SI1/.test(key))        return 'metal_silver';  // SI1/MSI1 — Silver future/micro
+  if (/^M?CL1/.test(key))        return 'energy';        // CL1/MCL1 — WTI crude future/micro
   if (/^(XAU|GOLD)/.test(key))   return 'metal_gold';
   if (/^(XAG|SILVER)/.test(key)) return 'metal_silver';
   if (/^(XPT|XPD)/.test(key))    return 'metal_other';
@@ -56,7 +67,11 @@ const INDEX_NAME = {
   US30: 'Dow Jones', US500: 'S&P 500', SPX500: 'S&P 500', USTEC: 'Nasdaq 100',
   NAS100: 'Nasdaq 100', GER40: 'DAX', DE40: 'DAX', UK100: 'FTSE 100',
   JP225: 'Nikkei 225', AUS200: 'ASX 200', FRA40: 'CAC 40', EU50: 'Euro Stoxx 50',
-  HK50: 'Hang Seng'
+  HK50: 'Hang Seng',
+  // Continuous futures contracts — mapped to their underlying index's real name
+  // so the news search reads "S&P 500 index", not the meaningless "ES1 index".
+  ES1: 'S&P 500', MES1: 'S&P 500', YM1: 'Dow Jones', MYM1: 'Dow Jones',
+  NQ1: 'Nasdaq 100', MNQ1: 'Nasdaq 100',
 };
 
 // Stooq is the price source: free, no key, and it covers shares, FX, indices
@@ -69,7 +84,9 @@ function stooqCode(key, cls) {
   if (cls === 'energy')       return /BRENT|UKOIL|XBR/.test(key) ? 'cb.f' : 'cl.f';
   if (cls === 'index') return ({
     US30: '^dji', US500: '^spx', SPX500: '^spx', USTEC: '^ndq', NAS100: '^ndq',
-    GER40: '^dax', DE40: '^dax', UK100: '^ukx', JP225: '^nkx', HK50: '^hsi'
+    GER40: '^dax', DE40: '^dax', UK100: '^ukx', JP225: '^nkx', HK50: '^hsi',
+    // Futures contracts proxied via their cash-index equivalent — see classify().
+    ES1: '^spx', MES1: '^spx', YM1: '^dji', MYM1: '^dji', NQ1: '^ndq', MNQ1: '^ndq',
   })[key] || null;
   return null;
 }
@@ -486,10 +503,10 @@ module.exports = function(app) {
       ok: true,
       groups: [
         { label: 'Crypto',   symbols: ['BTCUSD', 'ETHUSD'] },
-        { label: 'Metals',   symbols: ['XAUUSD', 'XAGUSD'] },
+        { label: 'Metals',   symbols: ['XAUUSD', 'XAGUSD', 'MGC1', 'GC1', 'SI1'] },
         { label: 'Forex',    symbols: ['EURUSD', 'GBPUSD', 'USDJPY', 'AUDUSD', 'USDCAD', 'NZDUSD', 'USDCHF'] },
-        { label: 'Indices',  symbols: ['US30', 'US500', 'USTEC', 'GER40', 'UK100'] },
-        { label: 'Energy',   symbols: ['USOIL', 'UKOIL'] },
+        { label: 'Indices',  symbols: ['US30', 'US500', 'USTEC', 'GER40', 'UK100', 'ES1', 'MES1', 'NQ1', 'MNQ1', 'YM1'] },
+        { label: 'Energy',   symbols: ['USOIL', 'UKOIL', 'CL1', 'MCL1'] },
         { label: 'Stocks',   symbols: ['AAPL', 'MSFT', 'NVDA', 'TSLA', 'AMZN', 'META', 'GOOGL', 'AMD', 'NFLX', 'JPM'] }
       ]
     });
