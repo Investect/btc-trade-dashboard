@@ -537,6 +537,9 @@
   <div class="layout" id="viewDashboard">
     <nav class="nav-col">
       <div class="sess-row" id="sessRow"></div>
+      <form onsubmit="event.preventDefault(); const v=this.q.value.trim(); if(v){ setSymbol(v); this.q.value=''; }" style="display:flex;gap:6px;margin-bottom:8px">
+        <input name="q" type="text" placeholder="Jump to ticker (e.g. GC1!)" style="flex:1;min-width:0;background:var(--surface-2);border:1px solid var(--line);color:var(--ink);border-radius:8px;padding:7px 10px;font-size:12.5px;font-family:inherit;outline:none">
+      </form>
       <div class="nav-card" id="navCard"><div class="empty">Loading instruments…</div></div>
     </nav>
 
@@ -559,19 +562,7 @@
             <span class="chart-legend-item"><span class="chart-legend-swatch" style="border-top-color:#fb923c; border-top-style:dotted"></span>20 EMA</span>
           </div>
         </div>
-        <div id="chartInner">
-          <div class="chart-svg-wrap"><svg class="candles" id="candleSvg" viewBox="0 0 600 260" preserveAspectRatio="none"></svg></div>
-          <div class="chart-axis"><span id="axisLo"></span><span id="axisHi"></span></div>
-          <div class="chart-svg-wrap"><svg class="volume" id="volumeSvg" viewBox="0 0 600 50" preserveAspectRatio="none"></svg></div>
-          <div class="indicator-row" id="indicatorRow"></div>
-          <div class="pattern-strip" id="patternStrip" style="display:none">
-            <div class="pattern-glyph" id="patternGlyph"></div>
-            <div class="pattern-info">
-              <div class="pn"><span id="patternName"></span><span class="tag" id="patternTag"></span></div>
-              <div class="pd" id="patternDesc"></div>
-            </div>
-          </div>
-        </div>
+        <div id="chartInner"><div class="empty">Loading chart…</div></div>
       </div>
 
       <div class="commentary-card">
@@ -755,7 +746,7 @@ const PATTERN_GLYPH = { bull:'▲', bear:'▼', neutral:'◆' };
 // ═══════════════════════════════════════════════════════════════════════════
 // STATE + HELPERS
 // ═══════════════════════════════════════════════════════════════════════════
-let symbol   = localStorage.getItem('sj_symbol') || 'BTCUSD';
+let symbol   = normTicker(localStorage.getItem('sj_symbol') || 'BTCUSD');
 let view     = 'dashboard';
 let symbols  = [];          // real traded instruments — /api/symbols
 let universe = [];          // browsable instrument groups — /api/intel/universe
@@ -906,6 +897,12 @@ setInterval(tickGlobalStrip, 1000);
 // wired into this backend yet, so it's shown with a plain "—" price rather
 // than anything invented.
 // ═══════════════════════════════════════════════════════════════════════════
+// Continuous-futures tickers proxied via their cash/spot equivalent (see
+// intel-multi.js classify()) — real and live, but NOT the exact tick price
+// your prop-firm platform shows for the futures contract itself. Flagged
+// honestly wherever a price for one of these is displayed.
+const FUTURES_PROXY = new Set(['ES1','MES1','YM1','MYM1','NQ1','MNQ1','GC1','MGC1','SI1','MSI1','CL1','MCL1','6E1','M6E1']);
+
 async function fetchQuoteFor(sym){
   if (sym === 'BTCUSD') {
     try {
@@ -958,11 +955,22 @@ function navItemHtml(sym, netPnl){
   </button>`;
 }
 
+// Same normalization the server applies (intel-multi.js normSymbol) — strips
+// TradingView's "!" continuous-contract marker and broker suffixes like
+// ".F", so "GC1!", "gc1", and "GC1.F" all resolve to the same ticker the
+// rest of the app already knows how to handle.
+function normTicker(raw){
+  return String(raw || '').trim().toUpperCase()
+    .replace(/\s+/g, '')
+    .replace(/!$/, '')
+    .replace(/[._\-#][A-Z0-9]{1,5}$/, '');
+}
+
 let quoteRefreshTimer = null;
 async function setSymbol(s){
-  symbol = s;
-  localStorage.setItem('sj_symbol', s);
-  document.querySelectorAll('.nav-item').forEach(b => b.classList.toggle('active', b.dataset.sym === s));
+  symbol = normTicker(s);
+  localStorage.setItem('sj_symbol', symbol);
+  document.querySelectorAll('.nav-item').forEach(b => b.classList.toggle('active', b.dataset.sym === symbol));
   await Promise.all([loadPulse(), loadPinned(), loadIntel(), loadLevelsAndCommentary()]);
   if (view === 'dashboard') renderChart();
   prefillCalc();
@@ -982,9 +990,11 @@ async function loadPulse(){
   const p = dp(symbol);
   const chg = q.change_pct;
   const bull = chg == null ? '' : cls(chg);
+  const proxyNote = FUTURES_PROXY.has(symbol) ? `<div class="pulse-label" style="margin-top:1px;color:var(--amber)">cash-index proxy, not your exact fill</div>` : '';
   pulseEl.innerHTML = `<div class="pulse-item">
     <span class="pulse-label">${symbol}${q.live?' · live':''}</span>
     <span class="pulse-value">${fmt(q.close, p)}${chg!=null?` <span class="pulse-delta ${bull}">${chg>=0?'+':''}${chg}%</span>`:''}</span>
+    ${proxyNote}
   </div>`;
   if (navDot) navDot.className = 'nav-dot ' + (bull || 'dim');
   if (navPx) navPx.innerHTML = `<span class="p mono">${fmt(q.close,p)}</span>${chg!=null?`<span class="d ${bull}">${chg>=0?'+':''}${chg}%</span>`:''}`;
@@ -1027,122 +1037,135 @@ async function loadPinned(){
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// CHART — real BTC candles via /api/ob/klines (Binance proxy). Every other
-// instrument gets an honest locked message: no free live OHLCV source
-// exists for FX/metals/indices/energy/stocks without a broker feed, and
-// this backend doesn't have one wired up yet.
+// CHART — real live chart for EVERY instrument via TradingView's free public
+// embed widget (s3.tradingview.com/tv.js). This is not a proxy or something
+// we compute — it's TradingView's own chart, the same data/rendering as the
+// TradingView panel you've been comparing against all session, so it will
+// never mismatch it. No API key, no login, no backend involved at all.
+// Previously this card only had real candles for BTC (hand-drawn from
+// Binance) and honestly locked everything else — that's retired now that
+// every mapped symbol gets the real thing instead of a proxy.
 // ═══════════════════════════════════════════════════════════════════════════
-function computeVWAP(c){ let cumPV=0,cumV=0; return c.map(k=>{ const tp=(k.h+k.l+k.cl)/3, v=k.v||0; cumPV+=tp*v; cumV+=v; return cumV>0?cumPV/cumV:tp; }); }
-function computeEMA(c,period){ const k=2/(period+1); let ema=c[0].cl; const out=[ema]; for(let i=1;i<c.length;i++){ ema=c[i].cl*k+ema*(1-k); out.push(ema);} return out; }
-function computeRSI(c,period=14){ if(c.length<period+1) period=c.length-1; if(period<1) return null; let g=0,l=0; for(let i=1;i<=period;i++){const d=c[i].cl-c[i-1].cl; if(d>=0)g+=d; else l-=d;} let ag=g/period,al=l/period; for(let i=period+1;i<c.length;i++){const d=c[i].cl-c[i-1].cl,gg=d>0?d:0,ll=d<0?-d:0; ag=(ag*(period-1)+gg)/period; al=(al*(period-1)+ll)/period;} if(al===0)return 100; return 100-100/(1+ag/al); }
-function computeATR(c,period=14){ if(c.length<2)return null; const trs=[]; for(let i=1;i<c.length;i++){const cur=c[i],p=c[i-1]; trs.push(Math.max(cur.h-cur.l, Math.abs(cur.h-p.cl), Math.abs(cur.l-p.cl)));} const n=Math.min(period,trs.length); let atr=trs.slice(0,n).reduce((s,v)=>s+v,0)/n; for(let i=n;i<trs.length;i++) atr=(atr*(period-1)+trs[i])/period; return atr; }
+const TV_SYMBOL_MAP = {
+  BTCUSD:'BINANCE:BTCUSDT', ETHUSD:'BINANCE:ETHUSDT',
+  XAUUSD:'OANDA:XAUUSD', XAGUSD:'OANDA:XAGUSD',
+  EURUSD:'OANDA:EURUSD', GBPUSD:'OANDA:GBPUSD', USDJPY:'OANDA:USDJPY', AUDUSD:'OANDA:AUDUSD',
+  USDCAD:'OANDA:USDCAD', NZDUSD:'OANDA:NZDUSD', USDCHF:'OANDA:USDCHF',
+  US30:'TVC:DJI', US500:'TVC:SPX', USTEC:'TVC:NDX', SPX500:'TVC:SPX', NAS100:'TVC:NDX',
+  GER40:'XETR:DAX', DE40:'XETR:DAX', UK100:'TVC:UKX', JP225:'TVC:NI225', AUS200:'ASX:XJO',
+  USOIL:'TVC:USOIL', UKOIL:'TVC:UKOIL',
+  ES1:'CME_MINI:ES1!', MES1:'CME_MINI:MES1!', YM1:'CBOT_MINI:YM1!', MYM1:'CBOT_MINI:MYM1!',
+  NQ1:'CME_MINI:NQ1!', MNQ1:'CME_MINI:MNQ1!',
+  GC1:'COMEX:GC1!', MGC1:'COMEX:MGC1!', SI1:'COMEX:SI1!',
+  CL1:'NYMEX:CL1!', MCL1:'NYMEX:MCL1!',
+  '6E1':'CME:6E1!', M6E1:'CME:M6E1!', // Euro FX future — real TradingView futures contract, not a proxy
+  AAPL:'NASDAQ:AAPL', MSFT:'NASDAQ:MSFT', NVDA:'NASDAQ:NVDA', TSLA:'NASDAQ:TSLA',
+  AMZN:'NASDAQ:AMZN', META:'NASDAQ:META', GOOGL:'NASDAQ:GOOGL', AMD:'NASDAQ:AMD',
+  NFLX:'NASDAQ:NFLX', JPM:'NYSE:JPM',
+};
+const TV_INTERVAL = { '1m':'1', '5m':'5', '15m':'15', '1h':'60' };
+let tvWidgetLoaded = false, tvWidgetLoadingPromise = null;
+function loadTvScript(){
+  if (window.TradingView) { tvWidgetLoaded = true; return Promise.resolve(); }
+  if (tvWidgetLoadingPromise) return tvWidgetLoadingPromise;
+  tvWidgetLoadingPromise = new Promise((resolve, reject) => {
+    const s = document.createElement('script');
+    s.src = 'https://s3.tradingview.com/tv.js';
+    s.onload = () => { tvWidgetLoaded = true; resolve(); };
+    s.onerror = () => reject(new Error('TradingView widget script failed to load'));
+    document.head.appendChild(s);
+  });
+  return tvWidgetLoadingPromise;
+}
 
 function renderChart(){
-  $('#chartTitle').textContent = `${symbol} · ${currentTf}`;
-  $('#tfSelect').style.display = symbol === 'BTCUSD' ? '' : 'none';
-  $('#chartLegend').style.display = symbol === 'BTCUSD' ? '' : 'none';
+  $('#chartTitle').textContent = `${symbol} · TradingView live`;
+  const tvSymbol = TV_SYMBOL_MAP[symbol];
   const box = $('#chartInner');
-  if (symbol !== 'BTCUSD') {
+  if (!tvSymbol) {
     $('#chartSub').textContent = '';
+    $('#tfSelect').style.display = 'none';
+    $('#chartLegend').style.display = 'none';
     box.innerHTML = `<div class="chart-locked">
       <span class="chart-locked-icon">🔒</span>
-      <span>Real live candles for ${symbol} aren't available free anywhere — that needs a broker data feed (Tradovate/BlackBull) connected, which isn't wired up yet. BTC/USD has a real feed via Binance.</span>
-      <button onclick="setSymbol('BTCUSD')">View BTC/USD</button>
+      <span>${symbol} isn't mapped to a TradingView symbol yet — tell me the exact exchange:ticker (e.g. "NYMEX:CL1!") and I'll add it.</span>
     </div>`;
     return;
   }
-  $('#chartSub').textContent = 'last 30 candles · real Binance data';
+  $('#tfSelect').style.display = '';
+  $('#chartLegend').style.display = 'none'; // TradingView draws its own legend/overlays now
+  $('#chartSub').textContent = 'real live TradingView chart — same data as your TradingView panel';
   box.innerHTML = `
-    <div class="chart-svg-wrap"><svg class="candles" id="candleSvg" viewBox="0 0 600 260" preserveAspectRatio="none"></svg></div>
-    <div class="chart-axis"><span id="axisLo"></span><span id="axisHi"></span></div>
-    <div class="chart-svg-wrap"><svg class="volume" id="volumeSvg" viewBox="0 0 600 50" preserveAspectRatio="none"></svg></div>
-    <div class="indicator-row" id="indicatorRow"></div>
+    <div id="tvChartContainer" style="height:400px;width:100%;border-radius:8px;overflow:hidden"></div>
     <div class="pattern-strip" id="patternStrip" style="display:none">
       <div class="pattern-glyph" id="patternGlyph"></div>
       <div class="pattern-info"><div class="pn"><span id="patternName"></span><span class="tag" id="patternTag"></span></div><div class="pd" id="patternDesc"></div></div>
     </div>
     <div class="empty" id="chartErr"></div>
   `;
-  loadKlines();
-  loadPattern();
+  mountTvWidget(tvSymbol);
+  if (symbol === 'BTCUSD') loadPattern(); // supplementary — Santosh's own live BTC read, see below
 }
-function switchTf(tf){ currentTf = tf; document.querySelectorAll('.tf-btn').forEach(b => b.classList.toggle('on', b.dataset.tf === tf)); loadKlines(); }
 
-async function loadKlines(){
+function mountTvWidget(tvSymbol){
   const errEl = $('#chartErr');
-  try {
-    const d = await api('/api/ob/klines?interval=' + currentTf + '&limit=30');
-    const candles = (d.candles || []).map(k => ({ o:+k[1], h:+k[2], l:+k[3], cl:+k[4], v:+k[5], t:+k[0] }));
-    if (!candles.length) { errEl.textContent = 'No candle data returned.'; return; }
-    errEl.textContent = '';
-    const {max, min} = drawCandles(candles);
-    $('#axisLo').textContent = fmt(min, 2);
-    $('#axisHi').textContent = fmt(max, 2);
-    drawVolume(candles);
-    const rsi = computeRSI(candles), atr = computeATR(candles);
-    $('#indicatorRow').innerHTML = `
-      <div class="ind-chip"><span class="ind-label">RSI (14)</span><span class="ind-val ${rsi>=70?'bear':rsi<=30?'bull':''}">${rsi==null?'—':rsi.toFixed(1)}</span><span class="ind-sub">${rsi==null?'—':rsi>=70?'Overbought':rsi<=30?'Oversold':'Neutral'}</span></div>
-      <div class="ind-chip"><span class="ind-label">ATR (14)</span><span class="ind-val">${atr==null?'—':atr.toFixed(2)}</span><span class="ind-sub">avg bar range, this window</span></div>
-    `;
-    renderConfluence();
-  } catch (e) {
-    errEl.textContent = 'Live chart unavailable: ' + e.message;
-  }
+  const container = $('#tvChartContainer');
+  if (!container) return; // view changed while the script was loading
+  errEl.textContent = 'Loading TradingView chart…';
+  loadTvScript().then(() => {
+    const liveContainer = $('#tvChartContainer'); // re-check — user may have switched symbol/view mid-load
+    if (!liveContainer) return;
+    liveContainer.innerHTML = '';
+    liveContainer.id = 'tvChartContainer'; // innerHTML='' keeps the id, just being explicit
+    const isDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+    try {
+      new window.TradingView.widget({
+        autosize: true,
+        symbol: tvSymbol,
+        interval: TV_INTERVAL[currentTf] || '5',
+        timezone: 'Etc/UTC',
+        theme: isDark ? 'dark' : 'light',
+        style: '1',
+        locale: 'en',
+        toolbar_bg: isDark ? '#242526' : '#ffffff',
+        enable_publishing: false,
+        hide_top_toolbar: false,
+        hide_legend: false,
+        save_image: false,
+        studies: ['STD;VWAP', 'MAExp@tv-basicstudies', 'RSI@tv-basicstudies'],
+        container_id: 'tvChartContainer',
+      });
+      errEl.textContent = '';
+    } catch(e) {
+      errEl.textContent = 'TradingView widget failed to render: ' + e.message;
+    }
+  }).catch(e => { errEl.textContent = 'Live chart unavailable: ' + e.message; });
 }
-function drawCandles(candles){
-  const svg = $('#candleSvg');
-  const W=600,H=260,pad=8;
-  const vwap = computeVWAP(candles), ema9 = computeEMA(candles,9), ema20 = computeEMA(candles,20);
-  const highs=candles.map(c=>c.h), lows=candles.map(c=>c.l);
-  const all=[...highs,...lows,...vwap,...ema9,...ema20];
-  const max=Math.max(...all), min=Math.min(...all), range=(max-min)||1;
-  const n=candles.length, cw=W/n, bodyW=cw*0.42;
-  const y=v=>H-pad-((v-min)/range)*(H-2*pad);
-  const x=i=>i*cw+cw/2;
-  let out='';
-  candles.forEach((c,i)=>{
-    const xi=x(i), up=c.cl>=c.o, color = up?'var(--bull)':'var(--bear)';
-    const yh=y(c.h), yl=y(c.l), yo=y(c.o), yc=y(c.cl);
-    const top=Math.min(yo,yc), h=Math.max(Math.abs(yc-yo),1.5);
-    out += `<line x1="${xi}" y1="${yh}" x2="${xi}" y2="${yl}" stroke="${color}" stroke-width="1.3"/>`;
-    out += `<rect x="${xi-bodyW/2}" y="${top}" width="${bodyW}" height="${h}" fill="${color}" rx="1"/>`;
-  });
-  const pts = arr => arr.map((v,i)=>`${x(i).toFixed(2)},${y(v).toFixed(2)}`).join(' ');
-  out += `<polyline points="${pts(vwap)}" fill="none" stroke="#c084fc" stroke-width="1.6"/>`;
-  out += `<polyline points="${pts(ema20)}" fill="none" stroke="#fb923c" stroke-width="1.4" stroke-dasharray="2,3"/>`;
-  out += `<polyline points="${pts(ema9)}" fill="none" stroke="#38bdf8" stroke-width="1.4" stroke-dasharray="5,3"/>`;
-  svg.innerHTML = out;
-  return {max, min};
+
+function switchTf(tf){
+  currentTf = tf;
+  document.querySelectorAll('.tf-btn').forEach(b => b.classList.toggle('on', b.dataset.tf === tf));
+  const tvSymbol = TV_SYMBOL_MAP[symbol];
+  if (tvSymbol) mountTvWidget(tvSymbol); // TradingView's classic widget has no clean setInterval() API — re-mount instead
 }
-function drawVolume(candles){
-  const svg = $('#volumeSvg');
-  const W=600,H=50,pad=2;
-  const vols = candles.map(c=>c.v||0), maxV = Math.max(...vols)||1;
-  const n=candles.length, cw=W/n, bodyW=cw*0.42;
-  const y = v => H-pad-(v/maxV)*(H-2*pad);
-  let out='';
-  candles.forEach((c,i)=>{
-    const xi=i*cw+cw/2, up=c.cl>=c.o, color = up?'var(--bull)':'var(--bear)';
-    const top=y(c.v||0);
-    out += `<rect x="${xi-bodyW/2}" y="${top}" width="${bodyW}" height="${H-pad-top}" fill="${color}" opacity="0.5" rx="1"/>`;
-  });
-  svg.innerHTML = out;
-}
-// Real candle-pattern detection, same engine analyst.js already runs on the
-// live BTC 1m feed (/analyst-candles).
+
+// Supplementary, BTC-only: Santosh's own live candle-pattern read from the
+// real Binance 1m feed his AMN engine already watches (/analyst-candles) —
+// separate from, and in addition to, the TradingView chart above.
 async function loadPattern(){
   try {
     const d = await api('/analyst-candles');
     const strip = $('#patternStrip');
+    if (!strip) return;
     if (!d.pattern) { strip.style.display = 'none'; return; }
     strip.style.display = '';
     $('#patternGlyph').textContent = PATTERN_GLYPH[d.pattern.type] || '◆';
-    $('#patternName').textContent = d.pattern.name;
+    $('#patternName').textContent = 'Santosh\'s read: ' + d.pattern.name;
     const tag = $('#patternTag');
     tag.textContent = d.pattern.type;
     tag.className = 'tag ' + (d.pattern.type === 'bull' ? 'bull' : d.pattern.type === 'bear' ? 'bear' : '');
     $('#patternDesc').textContent = d.pattern.desc;
-  } catch(e) { $('#patternStrip').style.display = 'none'; }
+  } catch(e) { const strip = $('#patternStrip'); if (strip) strip.style.display = 'none'; }
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -1300,6 +1323,26 @@ function addMsg(text, who){
   log.appendChild(m);
   log.scrollTop = log.scrollHeight;
 }
+// Real, current context for whichever symbol is selected — so Santosh can
+// actually read and comment on any ticker, not just BTC. Everything here is
+// live data this page already has for real (or fetches fresh): price from
+// /api/quote (or Binance for BTC), the trader's own real journal stats on
+// that symbol, and the top 3 real headlines already loaded for it. Sent
+// alongside the message; the server only ever uses what's actually present.
+async function buildChatContext(){
+  const ctx = { symbol };
+  try {
+    const q = await fetchQuoteFor(symbol);
+    if (q && q.close != null) ctx.quote = { close: q.close, change_pct: q.change_pct };
+  } catch(e) {}
+  try {
+    const j = await api('/api/journal?symbol=' + encodeURIComponent(symbol));
+    if (j.stats && j.stats.total) ctx.journal = j.stats;
+  } catch(e) {}
+  if (intelItems.length) ctx.headlines = intelItems.slice(0, 3).map(it => `${it.headline} (${it.source||'?'})`);
+  return ctx;
+}
+
 async function handleChatSubmit(ev){
   ev.preventDefault();
   const input = $('#chatInput'), btn = $('#chatSendBtn');
@@ -1309,9 +1352,10 @@ async function handleChatSubmit(ev){
   input.value = '';
   btn.disabled = true;
   try {
+    const context = await buildChatContext();
     const r = await fetch('/analyst-chat', {
       method: 'POST', headers: {'Content-Type':'application/json'},
-      body: JSON.stringify({ message: text, sessionId: CHAT_SESSION_ID })
+      body: JSON.stringify({ message: text, sessionId: CHAT_SESSION_ID, context })
     });
     const d = await r.json();
     if (!r.ok || d.error) throw new Error(d.error || ('HTTP ' + r.status));
@@ -1352,13 +1396,6 @@ function renderConfluence(){
   const s = loadConfluence();
   const n = CFL_ITEMS.filter(i=>s[i.id]).length, total = CFL_ITEMS.length;
   const complete = n === total;
-  let rsi = null, atr = null;
-  if (symbol === 'BTCUSD') {
-    try {
-      const svg = $('#candleSvg');
-      // recompute cheaply isn't stored globally; skip hint if chart hasn't loaded
-    } catch(e){}
-  }
   progressEl.innerHTML = `<div class="cfl-progress-bar"><div class="cfl-progress-fill ${complete?'complete':''}" style="width:${(n/total*100).toFixed(0)}%"></div></div><span class="cfl-progress-label">${n}/${total}</span>`;
   listEl.innerHTML = CFL_ITEMS.map(item => `<div class="cfl-item ${s[item.id]?'on':''}" onclick="toggleConfluence('${item.id}')">
       <span class="cfl-check">✓</span>
@@ -1655,7 +1692,9 @@ function saveManualTrade(){
   setInterval(loadBook, 8000);
   setInterval(loadLevelsAndCommentary, 30000);
   setInterval(loadIntel, 60000);
-  setInterval(() => { if (view === 'dashboard' && symbol === 'BTCUSD') { loadKlines(); loadPattern(); } }, 30000);
+  // The TradingView widget streams its own live updates — nothing to poll there.
+  // Only Santosh's own BTC pattern read (real /analyst-candles) needs a refresh.
+  setInterval(() => { if (view === 'dashboard' && symbol === 'BTCUSD') loadPattern(); }, 30000);
 })();
 </script>
 </body>
