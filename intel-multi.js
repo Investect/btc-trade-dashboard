@@ -31,8 +31,18 @@ const FX_CCY = /^(AUD|CAD|CHF|CNH|CZK|DKK|EUR|GBP|HKD|HUF|JPY|MXN|NOK|NZD|PLN|SE
 function normSymbol(raw) {
   return String(raw || '').trim().toUpperCase()
     .replace(/\s+/g, '')
-    .replace(/[._\-#][A-Z0-9]{1,5}$/, '');
+    .replace(/!$/, '')                          // TradingView continuous-contract marker: ES1!, GC1!, CL1! -> ES1, GC1, CL1
+    .replace(/[._\-#][A-Z0-9]{1,5}$/, '');       // broker/platform suffixes: USTEC.F, EURUSD-M1, etc.
 }
+
+// CME currency-futures roots (6E, 6B, ...) mapped to the spot pair they
+// track — the futures contract itself has no free feed, but currency
+// futures track spot almost exactly, so the spot pair is a genuinely close
+// real proxy (closer than the equity-index/commodity-future proxies below).
+const FUTURES_FX_MAP = {
+  '6E1':'EURUSD', 'M6E1':'EURUSD', '6B1':'GBPUSD', '6J1':'USDJPY',
+  '6A1':'AUDUSD', '6C1':'USDCAD', '6N1':'NZDUSD', '6S1':'USDCHF',
+};
 
 function classify(key) {
   // Continuous-futures-contract tickers (TradingView/prop-firm style: ES1,
@@ -40,6 +50,7 @@ function classify(key) {
   // underlying instrument's spot/cash equivalent is a reasonable, honestly-
   // labelled proxy for price+news. Checked ahead of the generic patterns so
   // they don't fall through to the 'stock' default and 404 against Stooq.
+  if (FUTURES_FX_MAP[key])       return 'fx_future';   // 6E1/6B1/... — currency futures (e.g. Euro FX)
   if (/^M?ES1/.test(key))        return 'index';       // ES1/MES1 — S&P 500 e-mini/micro
   if (/^M?YM1/.test(key))        return 'index';        // YM1/MYM1 — Dow e-mini/micro
   if (/^M?NQ1/.test(key))        return 'index';        // NQ1/MNQ1 — Nasdaq e-mini/micro
@@ -79,6 +90,7 @@ const INDEX_NAME = {
 function stooqCode(key, cls) {
   if (cls === 'stock')        return `${key.toLowerCase()}.us`;
   if (cls === 'fx')           return key.toLowerCase();
+  if (cls === 'fx_future')    return FUTURES_FX_MAP[key].toLowerCase();
   if (cls === 'metal_gold')   return 'xauusd';
   if (cls === 'metal_silver') return 'xagusd';
   if (cls === 'energy')       return /BRENT|UKOIL|XBR/.test(key) ? 'cb.f' : 'cl.f';
@@ -103,6 +115,12 @@ function newsQueryFor(key, cls) {
     case 'fx': {
       const a = CCY_NAME[key.slice(0, 3)] || key.slice(0, 3);
       const b = CCY_NAME[key.slice(3)]    || key.slice(3);
+      return `${a} ${b} exchange rate forex`;
+    }
+    case 'fx_future': {
+      const pair = FUTURES_FX_MAP[key];
+      const a = CCY_NAME[pair.slice(0, 3)] || pair.slice(0, 3);
+      const b = CCY_NAME[pair.slice(3)]    || pair.slice(3);
       return `${a} ${b} exchange rate forex`;
     }
     default: return `${key} stock`;
@@ -504,7 +522,7 @@ module.exports = function(app) {
       groups: [
         { label: 'Crypto',   symbols: ['BTCUSD', 'ETHUSD'] },
         { label: 'Metals',   symbols: ['XAUUSD', 'XAGUSD', 'MGC1', 'GC1', 'SI1'] },
-        { label: 'Forex',    symbols: ['EURUSD', 'GBPUSD', 'USDJPY', 'AUDUSD', 'USDCAD', 'NZDUSD', 'USDCHF'] },
+        { label: 'Forex',    symbols: ['EURUSD', 'GBPUSD', 'USDJPY', 'AUDUSD', 'USDCAD', 'NZDUSD', 'USDCHF', '6E1'] },
         { label: 'Indices',  symbols: ['US30', 'US500', 'USTEC', 'GER40', 'UK100', 'ES1', 'MES1', 'NQ1', 'MNQ1', 'YM1'] },
         { label: 'Energy',   symbols: ['USOIL', 'UKOIL', 'CL1', 'MCL1'] },
         { label: 'Stocks',   symbols: ['AAPL', 'MSFT', 'NVDA', 'TSLA', 'AMZN', 'META', 'GOOGL', 'AMD', 'NFLX', 'JPM'] }

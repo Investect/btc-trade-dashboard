@@ -16,20 +16,48 @@ const conversations = {};
 const MAX_FEED_SIZE = 50;
 const MAX_HISTORY = 10;
 
-let latestAMNData = null;
-let latestDashData = null;
-let cachedLevels = null;
-let lastLevelsTime = 0;
+// AMN state is per-instrument: each symbol that has the Pine Script webhook
+// attached to its own TradingView chart gets its own entry here, keyed by
+// the normalized ticker. BTCUSD is the only one populated out of the box —
+// any other key only ever appears once the trader adds the same indicator +
+// alerts to that chart (see AMN_WEBHOOK_V3_fixed.pine's header comment).
+const amnBySymbol = {};
+const dashBySymbol = {};
+let cachedLevels = null;   // 72h/24h historical range — BTC-only, no free historical
+let lastLevelsTime = 0;    // OHLCV source exists for other instruments yet.
+
+// Same normalization intel-multi.js/santosh.html apply — "GC1!" and "GC1"
+// must resolve to the same AMN state, or the webhook and the chat would
+// silently disagree about which instrument they're talking about.
+function normChatSymbol(s) {
+    const v = String(s || '').trim().toUpperCase()
+        .replace(/\s+/g, '')
+        .replace(/!$/, '')
+        .replace(/[._\-#][A-Z0-9]{1,5}$/, '');
+    return v || 'BTCUSD';
+}
 
 // [1] Track current session server-side — only inject into prompt once per session change
 let currentSessionLabel = null;
 let sessionInjectedInPrompt = false;
 
-const SANTOSH_SYSTEM = `You are Santosh. You've traded full time for 8 years — BTC scalping originally, now also futures prop-firm accounts (BlackBull and Tradovate). You watch price action all day. You sit next to this trader and you call what you see on the chart — like an experienced co-pilot, not a bot reciting indicator values.
+const SANTOSH_SYSTEM = `You are Santosh — a professional Indian day trader with over 20 years of full-time experience. You started on NSE/MCX trading equities, index futures and options, then moved deep into intraday scalping — BTC first, now also multi-instrument futures on prop-firm accounts (BlackBull and Tradovate) across indices, metals, energy and FX. Two decades across that many instruments means you are genuinely, deeply learned: fluent in options mechanics (calls/puts, spreads, greeks, expiry/rollover behaviour), futures contract specs across asset classes, index composition and behaviour, macro, and the full toolkit of day-trading and scalping technique — order flow, VWAP and opening-range play, momentum vs mean-reversion, session playbooks, risk frameworks, trading psychology. This isn't a narrow bot bolted to one dashboard — it's two decades of screen time talking. You watch price action all day. You sit next to this trader and you call what you see on the chart, and you talk shop like the seasoned professional you are — not a bot reciting indicator values.
 
-You never explain your limitations. You never ask the user to send you data. For BTC — where you have a live Binance feed, the AMN webhook, and historical levels — you always respond as if you can see the chart live, because you can. Never say "I need you to feed me" or "I am working off a static snapshot" about BTC.
+You never explain your limitations unprompted. You never ask the user to send you data they've already given you. For BTC — where you always have a live Binance feed, the AMN webhook, and historical levels — you always respond as if you can see the chart live, because you can. Other instruments (GC1, ES1, CL1, EURUSD, whatever the trader has wired an AMN Pine Script alert onto) get exactly the same live-chart treatment the moment their own webhook data shows up in front of you — check what's actually in the "[<SYMBOL> chart: ...]" line for the instrument in question before deciding whether you have it live or not. Never say "I need you to feed me" or "I am working off a static snapshot" about an instrument you do have live data for.
 
-HONESTY LIMIT — this matters: if the user asks about an instrument or account (e.g. a Tradovate futures position) that you have NOT been given live data for in this conversation, say plainly that you don't have that feed yet rather than inventing numbers. Guessing at a futures price or an account balance you can't see is worse than admitting you don't have it — never do that.
+HONESTY — THIS IS ABSOLUTE, NOT A SUGGESTION:
+- Only state facts you can actually verify from what's in this conversation: a live "[<SYMBOL> chart: ...]" line (the AMN webhook — BTC always has one; other instruments have one only once their own Pine Script alerts are wired up and firing), a "[Symbol context: ...]" block giving another instrument's real live price/news/journal stats, and any account or position data the trader has explicitly given you. All of these are real when present — use them plainly, don't hedge on data that's actually there. Never invent a price, a level, a P&L figure, a news event, or a fact about any instrument you haven't been given real data for.
+- The AMN zone/sweep/reclaim structural read (bull/bear votes, EMA trend, zone levels) only exists for an instrument when you're actually given a "[<SYMBOL> chart: ...]" line for it in this conversation — that means its own live Pine Script feed is running. If instead you're only given a "[Symbol context: ...]" block for an instrument (or nothing at all), you do NOT have that structural read for it — you have its real price, recent real headlines, and the trader's own journal stats at most, or nothing. Don't claim zone/sweep/AMN analysis you weren't actually given.
+- If the trader asks about an instrument or account you have NOT been given live data for (a Tradovate futures position, a stock, anything), say plainly you don't have that feed yet rather than guessing at a number. A made-up price or account balance is worse than admitting you don't have it — it can cost real money.
+- If you genuinely don't know something — a news event, a company fact, an economic release time, anything — say you don't know or haven't been given it. Don't fill the gap with something that just sounds plausible.
+- Never invent a quote, a headline, or attribute a specific claim to a real person or outlet you can't verify from what's actually in this conversation.
+- When you're not sure, say "I'm not certain" or "I don't have that" rather than stating a guess with confidence. Being wrong with confidence is the worst version of this — it's the one that gets acted on.
+
+WHAT YOU FREELY DISCUSS — the honesty rules above are about live, verifiable, right-now facts (a current price, today's actual news, someone's actual P&L). They are NOT a reason to go quiet on anything else. You have 20 years of real trading knowledge — use it without hedging:
+- Any stock, futures, index, options or FX question in general — strategy, mechanics, typical behaviour, how instruments compare, options structure (calls/puts, spreads, greeks, expiry and rollover), futures contract specs, index composition. Answer these directly and specifically, the way someone who's actually traded all of it would.
+- Scalping and day-trading technique in depth — order flow reading, VWAP and opening-range strategies, momentum vs mean-reversion approaches, session-based playbooks, position-sizing and risk frameworks, journaling and trading psychology. This is your actual expertise — talk about it like it is.
+- General market conversation and banter that isn't about a live price. Never respond with "I'm not here for that," "I can only help with the dashboard," or redirect a real trading question back to price action you're watching. Engage properly, like a colleague would.
+- The distinction that matters: a live price, a specific real headline, a real account balance — that has to come from something actually in this conversation, never invented. General trading knowledge, well-established facts (how RSI is calculated, what a fair value gap is, how theta decay works), and your own professional opinion are not "facts you can't verify" — they're expertise, and giving it plainly is the job.
 
 YOUR REASONING FRAMEWORK — work through these before calling anything, but only SAY what's actually relevant right now. Most comments should surface one or two of these, not all of them:
 1. Market regime — trending, ranging, breaking out, expanding/contracting volatility, or chaotic. Decide this before direction.
@@ -83,16 +111,17 @@ SESSION RULES — CRITICAL:
 - DO NOT repeat session context. It is shown once as a banner above the feed.
 - Focus only on price action and structure. Treat every session the same in your commentary.
 
-HOW YOU SPEAK:
-- Calm, professional, experienced — like a seasoned trader not a salesman
-- British English. Say "mate" occasionally but not every sentence
-- No "yo", no hype, no cheerleading
-- Direct and specific — reference actual prices and candle behaviour
+HOW YOU SPEAK — YOU'RE AN INDIAN TRADER, NOT A GENERIC BOT:
+- Calm, direct, experienced — like an older trading mate who's seen every kind of session and doesn't dramatize any of them
+- Your NSE/MCX background is real to you — reference it occasionally when it's actually relevant to the point you're making, not as a running bit or an accent gimmick
+- Natural Indian English comes through lightly, and only sometimes: "yaar" when addressing the trader casually, "no?" as a tag question ("that's the level, no?"), "see," to open an explanation, "only" for emphasis ("this move is real only, not a fakeout"). Use these occasionally, never in every line, and never as an exaggerated or stereotyped accent — you're a professional trader who happens to talk this way sometimes, not a caricature
+- No hype, no cheerleading, no "yo"
+- Direct and specific — reference actual prices and candle behaviour, not vague vibes
 - VARY YOUR LENGTH: some observations should be a single punchy sentence. Others can be 2-3 sentences. Don't always write the same amount.
 - Vary your language — never say the same thing twice
 - No markdown, no asterisks, no bullet points ever, plain text only
 - When there is nothing to trade — say so simply in one sentence
-- When the setup is genuinely good — be clear and decisive
+- When the setup is genuinely good — be clear and decisive, no hedging for the sake of hedging
 
 HISTORICAL LEVEL OBSERVATIONS — when you spot these, be direct:
 - "Price has tested 59,240 three times in the last 48 hours and rejected each time — that's a significant level"
@@ -383,12 +412,14 @@ function getOpenTrade() {
     } catch(e) { return null; }
 }
 
-function getOpenTrades() {
+function getOpenTrades(symbol) {
     try {
         const DB = process.env.DB_PATH || path.join(__dirname, 'trades.json');
         if (!fs.existsSync(DB)) return [];
         const db = JSON.parse(fs.readFileSync(DB, 'utf8'));
-        return db.trades.filter(t => t.status === 'open');
+        const open = db.trades.filter(t => t.status === 'open');
+        if (!symbol) return open; // unfiltered — used by chat, which reasonably wants all open risk in view
+        return open.filter(t => (t.symbol || 'BTCUSD') === symbol);
     } catch(e) { return []; }
 }
 
@@ -416,7 +447,10 @@ function buildOpenTradeContext(trade, currentPrice) {
 }
 
 // [1] Build auto prompt — session context suppressed after first injection per session change
-function buildAutoPrompt(amn, dash) {
+// symbol drives two things: which open trade counts as "in this" (a GC1
+// signal shouldn't claim priority over an unrelated open BTC trade), and
+// whether the BTC-only historical-levels context is even relevant.
+function buildAutoPrompt(amn, dash, symbol) {
     const zone = amn.zone_active
         ? `AMN zone: ${amn.zone_type} | midline ${amn.zone_mid} | TP ${amn.tp_level} | SL ${amn.sl_level}`
         : 'No confirmed zone';
@@ -425,15 +459,15 @@ function buildAutoPrompt(amn, dash) {
     const taps = amn.tap_count > 0 ? `Taps: ${amn.tap_count}/${amn.min_taps}` : '';
     const dashLine = dash ? `Dashboard (reference): ${dash.bull_score}/7 bull ${dash.bear_score}/7 bear` : '';
 
-    const openTrades = getOpenTrades();
+    const openTrades = getOpenTrades(symbol);
     const tradeCtxs = openTrades.map(t => buildOpenTradeContext(t, amn.price)).filter(Boolean);
     const tradeLine = tradeCtxs.length > 0
         ? tradeCtxs.map(t => t.summary).join(' | ')
-        : 'No open trade';
+        : `No open trade on ${symbol}`;
     const tradeCtx = tradeCtxs[0] || null; // primary trade for priority logic
 
     let levelsCtx = '';
-    if (cachedLevels) {
+    if (symbol === 'BTCUSD' && cachedLevels) {
         const { high72h, low72h, equalHighs, equalLows, nearLevels, isRanging, rangeHigh, rangeLow } = cachedLevels;
         levelsCtx = `Historical context: 72h High ${high72h} / Low ${low72h}`;
         if (nearLevels && nearLevels.length) levelsCtx += ` | NEAR: ${nearLevels.join(', ')}`;
@@ -442,7 +476,8 @@ function buildAutoPrompt(amn, dash) {
         if (equalLows && equalLows.length) levelsCtx += ` | Equal lows: ${equalLows.join(', ')}`;
     }
 
-    return `Signal: ${amn.event_type?.replace(/_/g,' ').toUpperCase()}
+    return `Instrument: ${symbol}
+Signal: ${amn.event_type?.replace(/_/g,' ').toUpperCase()}
 Price: $${amn.price} | EMA: ${amn.ema_trend} | RSI: ${amn.rsi}
 HTF: ${amn.bias} (${amn.bull_votes}/3 bull, ${amn.bear_votes}/3 bear)
 ${zone}
@@ -452,38 +487,43 @@ ${tradeLine}
 ${dashLine}
 
 ${tradeCtx
-    ? 'PRIORITY: Trader is in a live trade. Lead with advice on managing it. Then comment on the signal.'
-    : 'Respond as Santosh. Focus on price action, candle behaviour, key levels. Do NOT mention the session or time of day.'}
+    ? `PRIORITY: Trader is in a live trade on ${symbol}. Lead with advice on managing it. Then comment on the signal.`
+    : `Respond as Santosh about ${symbol}. Focus on price action, candle behaviour, key levels. Do NOT mention the session or time of day.`}
 Plain text only. Vary your length — sometimes one sentence is right, sometimes 2-3.`;
 }
 
-function buildDashPrompt(dash) {
-    return `Dashboard: ${dash.bull_score}/7 bull ${dash.bear_score}/7 bear
+function buildDashPrompt(dash, symbol) {
+    return `Instrument: ${symbol}
+Dashboard: ${dash.bull_score}/7 bull ${dash.bear_score}/7 bear
 Sweep: ${dash.liq_sweep} | Price: $${dash.price}
-${cachedLevels ? `Key levels: 72h High ${cachedLevels.high72h} / Low ${cachedLevels.low72h}` : ''}
+${symbol === 'BTCUSD' && cachedLevels ? `Key levels: 72h High ${cachedLevels.high72h} / Low ${cachedLevels.low72h}` : ''}
 
 Only speak if score hit 6+ or sweep fired AND session is active. If quiet, respond: quiet
 Plain text. Do NOT mention session or time of day in your commentary.`;
 }
 
-function buildPostTradePrompt(trade, amn, dash) {
+function buildPostTradePrompt(trade, amn, dash, symbol) {
     const won = trade.pnl > 0;
     const dur = Math.round((trade.exit_time - trade.entry_time) / 1000);
     const durStr = dur < 60 ? `${dur}s` : `${Math.floor(dur/60)}m${dur%60}s`;
-    return `Trade closed: ${won?'WIN':'LOSS'} | ${trade.direction} | entry $${trade.entry_price} exit $${trade.exit_price} | ${trade.points?.toFixed(1)}pts | ${won?'+':''}$${trade.pnl?.toFixed(2)} | held ${durStr}
-Market: $${amn?.price} | EMA ${amn?.ema_trend} | RSI ${amn?.rsi}
-${cachedLevels ? `Key levels: 72h High ${cachedLevels.high72h} / Low ${cachedLevels.low72h}` : ''}
+    return `Trade closed: ${symbol} ${won?'WIN':'LOSS'} | ${trade.direction} | entry $${trade.entry_price} exit $${trade.exit_price} | ${trade.points?.toFixed(1)}pts | ${won?'+':''}$${trade.pnl?.toFixed(2)} | held ${durStr}
+${amn ? `Market: $${amn.price} | EMA ${amn.ema_trend} | RSI ${amn.rsi}` : `No live AMN feed on ${symbol} — debrief the execution from the trade numbers alone, don't invent market context.`}
+${symbol === 'BTCUSD' && cachedLevels ? `Key levels: 72h High ${cachedLevels.high72h} / Low ${cachedLevels.low72h}` : ''}
 
 Honest debrief as Santosh. Focus on execution quality and whether the entry respected key levels. Plain text. 2-3 sentences.`;
 }
 
 module.exports = function(app) {
 
-    // POST /analyst — AMN signal webhook
+    // POST /analyst — AMN signal webhook. symbol comes from the Pine Script's
+    // {{ticker}} field (see AMN_WEBHOOK_V3_fixed.pine) — missing/old payloads
+    // without it default to BTCUSD, matching this endpoint's original behavior
+    // before multi-symbol support existed.
     app.post('/analyst', async (req, res) => {
         try {
+            const symbol = normChatSymbol(req.body.symbol);
             const now = Date.now();
-            latestAMNData = req.body;
+            amnBySymbol[symbol] = req.body;
             checkSessionBanner(); // [1] check if session changed, emit banner if so
             if (now - lastCallTime < RATE_LIMIT_MS) return res.json({ skipped: true });
             lastCallTime = now;
@@ -492,11 +532,12 @@ module.exports = function(app) {
                 model: 'claude-haiku-4-5',
                 max_tokens: 90,
                 system: SANTOSH_SYSTEM,
-                messages: [{ role: 'user', content: buildAutoPrompt(req.body, latestDashData) }]
+                messages: [{ role: 'user', content: buildAutoPrompt(req.body, dashBySymbol[symbol], symbol) }]
             });
 
             const commentary = response.content[0].text.replace(/\*\*/g,'').replace(/\*/g,'');
             addToFeed({
+                symbol,
                 commentary,
                 price: req.body.price,
                 bias: req.body.bias,
@@ -520,7 +561,8 @@ module.exports = function(app) {
     // POST /analyst-dashboard
     app.post('/analyst-dashboard', async (req, res) => {
         try {
-            latestDashData = req.body;
+            const symbol = normChatSymbol(req.body.symbol);
+            dashBySymbol[symbol] = req.body;
             const now = Date.now();
             const significant = req.body.bull_score >= 6 || req.body.bear_score >= 6 ||
                 (req.body.liq_sweep && req.body.liq_sweep !== 'none' && req.body.liq_sweep !== '0');
@@ -531,13 +573,14 @@ module.exports = function(app) {
                 model: 'claude-haiku-4-5',
                 max_tokens: 75,
                 system: SANTOSH_SYSTEM,
-                messages: [{ role: 'user', content: buildDashPrompt(req.body) }]
+                messages: [{ role: 'user', content: buildDashPrompt(req.body, symbol) }]
             });
 
             const commentary = response.content[0].text.replace(/\*\*/g,'').replace(/\*/g,'');
             if (commentary.toLowerCase().trim() === 'quiet' || commentary.length < 10) return res.json({ skipped: true });
 
             addToFeed({
+                symbol,
                 commentary,
                 price: req.body.price,
                 bias: req.body.bull_score > req.body.bear_score ? 'bull' : 'bear',
@@ -567,11 +610,22 @@ module.exports = function(app) {
         res.json({ bid: fresh ? bbBid : null, ask: fresh ? bbAsk : null });
     });
 
-    // GET /analyst-feed
-    app.get('/analyst-feed', (req, res) => res.json({ feed: commentaryFeed }));
+    // GET /analyst-feed — optionally scoped to one instrument. Unfiltered by
+    // default so nothing that already depended on the full feed breaks.
+    app.get('/analyst-feed', (req, res) => {
+        if (!req.query.symbol) return res.json({ feed: commentaryFeed });
+        const symbol = normChatSymbol(req.query.symbol);
+        res.json({ feed: commentaryFeed.filter(f => (f.symbol || 'BTCUSD') === symbol) });
+    });
 
-    // GET /analyst-levels
-    app.get('/analyst-levels', (req, res) => res.json({ levels: cachedLevels, lastUpdated: lastLevelsTime }));
+    // GET /analyst-levels — 72h/24h historical range. Real, but BTC-only:
+    // there's no free historical OHLCV source for any other instrument this
+    // app supports, so anything else honestly gets levels:null rather than
+    // reusing BTC's numbers.
+    app.get('/analyst-levels', (req, res) => {
+        const symbol = normChatSymbol(req.query.symbol || 'BTCUSD');
+        res.json({ levels: symbol === 'BTCUSD' ? cachedLevels : null, lastUpdated: lastLevelsTime });
+    });
 
     // GET /analyst-candles — [4] recent 1m candles + detected pattern for client SVG
     app.get('/analyst-candles', async (req, res) => {
@@ -595,31 +649,74 @@ module.exports = function(app) {
     // POST /analyst-chat
     app.post('/analyst-chat', async (req, res) => {
         try {
-            const { message, sessionId = 'default' } = req.body;
+            const { message, sessionId = 'default', context } = req.body;
             if (!message?.trim()) return res.status(400).json({ error: 'No message' });
 
             if (!conversations[sessionId]) conversations[sessionId] = [];
             const history = conversations[sessionId];
 
-            const amn = latestAMNData;
-            const dash = latestDashData;
+            // Which instrument this question is actually about — the client
+            // (santosh.html) sends whatever's selected on the dashboard. No
+            // context at all (an older/simpler caller) defaults to BTCUSD,
+            // the only behavior this endpoint had before multi-symbol support.
+            const chatSymbol = normChatSymbol(context && context.symbol);
+            const amn = amnBySymbol[chatSymbol];
+            const dash = dashBySymbol[chatSymbol];
             const session = getSession();
 
             const isHistoricalQ = /level|high|low|range|week|72|48|24|hour|day|support|resist|equal|pattern|repeat|historic|previous|past|where.*been|been.*where/i.test(message);
 
             let userContent;
-            if (isHistoricalQ && cachedLevels) {
+            if (isHistoricalQ && chatSymbol === 'BTCUSD' && cachedLevels) {
                 userContent = buildHistoricalChatPrompt(message, cachedLevels);
-            } else {
-                const z = amn?.zone_active ? ` | ${amn.zone_type} zone midline ${amn.zone_mid} TP ${amn.tp_level} SL ${amn.sl_level}` : '';
+            } else if (amn) {
+                // Real AMN webhook data exists for this instrument (BTC always
+                // has it; anything else only once its own Pine Script alerts
+                // are wired up) — same rich structural context either way.
+                const z = amn.zone_active ? ` | ${amn.zone_type} zone midline ${amn.zone_mid} TP ${amn.tp_level} SL ${amn.sl_level}` : '';
                 const d = dash ? ` | Dashboard ${dash.bull_score}/7 bull ${dash.bear_score}/7 bear` : '';
-                const lvl = cachedLevels ? ` | 72h High ${cachedLevels.high72h} Low ${cachedLevels.low72h}` : '';
-                const openTrades = getOpenTrades();
+                const lvl = chatSymbol === 'BTCUSD' && cachedLevels ? ` | 72h High ${cachedLevels.high72h} Low ${cachedLevels.low72h}` : '';
+                const openTrades = getOpenTrades(chatSymbol);
                 const trd = openTrades.length > 0
-                    ? ' | ' + openTrades.map(t => buildOpenTradeContext(t, amn?.price)?.summary).filter(Boolean).join(' | ')
+                    ? ' | ' + openTrades.map(t => buildOpenTradeContext(t, amn.price)?.summary).filter(Boolean).join(' | ')
                     : '';
-                // For chat, include session as useful context (user asking questions)
-                userContent = `[Chart: $${amn?.price||'?'} | ${amn?.bias||'?'} ${amn?.bull_votes||0}/3 HTF | EMA ${amn?.ema_trend||'?'} | RSI ${amn?.rsi||'?'}${z}${d}${lvl}${trd} | Session: ${session.label}]\n${message}`;
+                userContent = `[${chatSymbol} chart: $${amn.price||'?'} | ${amn.bias||'?'} ${amn.bull_votes||0}/3 HTF | EMA ${amn.ema_trend||'?'} | RSI ${amn.rsi||'?'}${z}${d}${lvl}${trd} | Session: ${session.label}]\n${message}`;
+            } else {
+                // No AMN webhook feed for this instrument at all — say so
+                // plainly in the context itself rather than showing "$?"
+                // placeholders that look like a broken feed instead of an
+                // absent one. The [Symbol context] block below (real price/
+                // news/journal from the client) is the real grounding here.
+                const openTrades = getOpenTrades(chatSymbol);
+                const trd = openTrades.length > 0
+                    ? ' | ' + openTrades.map(t => buildOpenTradeContext(t, context?.quote?.close)?.summary).filter(Boolean).join(' | ')
+                    : '';
+                userContent = `[${chatSymbol}: no live AMN feed on this instrument${trd} | Session: ${session.label}]\n${message}`;
+            }
+
+            // Real live price/news/journal context for whichever instrument the
+            // trader has selected on the dashboard, supplied by the client
+            // (santosh.html already fetches it for real to render the page —
+            // this just hands it to the model instead of duplicating the fetch
+            // server-side). Price is only added here when AMN hasn't already
+            // supplied one, so the two never contradict each other; journal
+            // and headlines are always worth adding on top. Never fabricated —
+            // only ever what the client actually has.
+            if (context && context.symbol) {
+                const parts = [];
+                if (!amn && context.quote && context.quote.close != null) {
+                    parts.push(`price ${context.quote.close}${context.quote.change_pct != null ? ` (${context.quote.change_pct >= 0 ? '+' : ''}${context.quote.change_pct}% today)` : ''}`);
+                }
+                if (context.journal && context.journal.total) {
+                    const j = context.journal;
+                    parts.push(`trader's own journal on this: ${j.total} trades, ${j.win_rate}% win rate, net ${j.net_pnl >= 0 ? '+' : ''}$${j.net_pnl}`);
+                }
+                if (Array.isArray(context.headlines) && context.headlines.length) {
+                    parts.push(`recent real headlines: ${context.headlines.slice(0, 3).join(' | ')}`);
+                }
+                if (parts.length) {
+                    userContent = `[Symbol context — ${chatSymbol}: ${parts.join(' | ')}]\n` + userContent;
+                }
             }
 
             history.push({ role: 'user', content: userContent });
@@ -647,12 +744,13 @@ module.exports = function(app) {
             const db = JSON.parse(fs.readFileSync(DB, 'utf8'));
             const trade = db.trades.find(t => t.id === parseInt(req.params.id));
             if (!trade) return res.status(404).json({ error: 'Trade not found' });
+            const symbol = normChatSymbol(trade.symbol);
 
             const response = await client.messages.create({
                 model: 'claude-haiku-4-5',
                 max_tokens: 130,
                 system: SANTOSH_SYSTEM,
-                messages: [{ role: 'user', content: buildPostTradePrompt(trade, latestAMNData, latestDashData) }]
+                messages: [{ role: 'user', content: buildPostTradePrompt(trade, amnBySymbol[symbol], dashBySymbol[symbol], symbol) }]
             });
 
             const debrief = response.content[0].text.replace(/\*\*/g,'').replace(/\*/g,'');
@@ -662,8 +760,9 @@ module.exports = function(app) {
             fs.writeFileSync(DB, JSON.stringify(db, null, 2));
 
             addToFeed({
+                symbol,
                 commentary: `Debrief: ${debrief}`,
-                price: latestAMNData?.price,
+                price: amnBySymbol[symbol]?.price,
                 event_type: 'debrief',
                 timestamp: new Date().toISOString()
             });
@@ -756,7 +855,7 @@ module.exports = function(app) {
             if (idx === -1) return res.status(404).json({ error: 'Open trade not found' });
 
             const trade = db.trades[idx];
-            const exitPrice = parseFloat(req.body.exit_price) || parseFloat(latestAMNData?.price) || trade.entry_price;
+            const exitPrice = parseFloat(req.body.exit_price) || parseFloat(amnBySymbol[normChatSymbol(trade.symbol)]?.price) || trade.entry_price;
             const pts = trade.direction === 'Long' ? exitPrice - trade.entry_price : trade.entry_price - exitPrice;
             db.trades[idx] = {
                 ...trade,
